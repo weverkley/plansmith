@@ -1,0 +1,15 @@
+ai:
+  default_provider: "gemini"
+  keys:
+    gemini: "YOUR_GEMINI_API_KEY"
+    openai: "YOUR_OPENAI_API_KEY"
+    qwen: "YOUR_QWEN_API_KEY"
+  models:
+    gemini: "gemini-pro"
+    openai: "gpt-3.5-turbo"
+    qwen: "qwen-turbo"
+trello:
+  key: "YOUR_TRELLO_API_KEY"
+  token: "YOUR_TRELLO_API_TOKEN"
+log_level: "info" # Default logging level (debug, info, warn, error)
+save_chat_on_exit: false # Set to true to save chat messages to a log file on application exit (ctrl+q)
