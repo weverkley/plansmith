@@ -244,9 +244,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case fileSelectedMsg:
-		// When a file is selected, we replace the entire input with the file path
-		// and add a space for the user to continue typing if needed.
-		m.textInput.SetValue(msg.path + " ")
+		// When a file is selected, we replace the entire input with the file path.
+		m.textInput.SetValue(msg.path)
 		m.filePicker.visible = false
 		m.textInput.CursorEnd()
 
