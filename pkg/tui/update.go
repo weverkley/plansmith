@@ -175,6 +175,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						logging.Info("Plan loaded successfully from %s", input)
 					}
 				case ContextWaitingForFilePath:
+					// Check if the file exists at the given path. If not, try to find it.
+					if _, err := os.Stat(input); os.IsNotExist(err) {
+						logging.Info("File not found at '%s', searching for it...", input)
+						filepath.Walk(".", func(path string, info os.FileInfo, err error) error {
+							if err != nil {
+								return err
+							}
+							if !info.IsDir() && info.Name() == input {
+								logging.Info("Found file at '%s'", path)
+								input = path
+							}
+							return nil
+						})
+					}
 					m.markdownPath = input
 					m.chat.AddMessage("assistant", fmt.Sprintf("Thanks! I'll start crafting a plan from '%s'.", input))
 					m.chat.SetLoading(true)
