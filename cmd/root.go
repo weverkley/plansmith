@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"plansmith/pkg/logging"
 	"plansmith/pkg/tui"
-	"strings" // Added import
-	"time"    // Added import
+	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
@@ -17,21 +17,22 @@ import (
 
 var cfgFile string
 var logLevel string
+var plansmithDir string // Global variable to store the resolved .plansmith directory
 
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
 	Use:   "plansmith",
 	Short: "PlanSmith is an AI-powered project planning tool.",
-	Long: `PlanSmith is an interactive, chat-like terminal application that \'crafts\'
+	Long: `PlanSmith is an interactive, chat-like terminal application that 'crafts'
 raw project ideas (from Markdown) into fully-formed, actionable Kanban boards (in Trello),
 with human review at every step.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		// Initialize logger after viper has read the config
+		// Initialize logger after viper has read the config and plansmithDir is resolved
 		parsedLogLevel, err := logging.ParseLogLevel(logLevel)
 		if err != nil {
 			log.Fatalf("Invalid log level: %v", err)
 		}
-		err = logging.InitGlobalLogger(parsedLogLevel)
+		err = logging.InitGlobalLogger(parsedLogLevel, filepath.Join(plansmithDir, "logs"))
 		if err != nil {
 			log.Fatalf("Failed to initialize logger: %v", err)
 		}
@@ -61,18 +62,34 @@ func init() {
 
 // initConfig reads in config file and ENV variables if set.
 func initConfig() {
+	// Determine the .plansmith directory
+	cwd, err := os.Getwd()
+	cobra.CheckErr(err)
+	cwdPlansmithDir := filepath.Join(cwd, ".plansmith")
+
+	home, err := os.UserHomeDir()
+	cobra.CheckErr(err)
+	homePlansmithDir := filepath.Join(home, ".plansmith")
+
+	if _, err := os.Stat(cwdPlansmithDir); err == nil {
+		plansmithDir = cwdPlansmithDir
+	} else if _, err := os.Stat(homePlansmithDir); err == nil {
+		plansmithDir = homePlansmithDir
+	} else {
+		// If neither exists, create in CWD
+		err := os.MkdirAll(cwdPlansmithDir, 0755)
+		cobra.CheckErr(err)
+		plansmithDir = cwdPlansmithDir
+		fmt.Fprintln(os.Stderr, "Created .plansmith directory in current working directory:", plansmithDir)
+	}
+
+	// Set viper config paths
+	viper.AddConfigPath(plansmithDir)
+	viper.SetConfigName("config")
+
 	if cfgFile != "" {
 		// Use config file from the flag.
 		viper.SetConfigFile(cfgFile)
-	} else {
-		// Find home directory.
-		home, err := os.UserHomeDir()
-		cobra.CheckErr(err)
-
-		// Search config in home directory with name ".plansmith" (without extension).
-		viper.AddConfigPath(filepath.Join(home, ".plansmith"))
-		viper.AddConfigPath(".") // optionally look for config in the working directory
-		viper.SetConfigName("config")
 	}
 
 	viper.AutomaticEnv() // read in environment variables that match
@@ -108,14 +125,14 @@ func StartTUI() {
 	// Check if chat messages should be saved on exit
 	if viper.GetBool("save_chat_on_exit") {
 		if m, ok := finalModel.(tui.Model); ok {
-			saveChatHistory(m.GetChatMessages())
+			saveChatHistory(m.GetChatMessages(), plansmithDir)
 		}
 	}
 
 	logging.Info("TUI program finished")
 }
 
-func saveChatHistory(messages []tui.ChatMessage) {
+func saveChatHistory(messages []tui.ChatMessage, plansmithDir string) {
 	logDir := filepath.Join(plansmithDir, "logs")
 	err := os.MkdirAll(logDir, 0755)
 	if err != nil {
