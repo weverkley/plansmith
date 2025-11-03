@@ -122,6 +122,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, nil
 				}
 			case "enter":
+				if m.autocomplete.Visible && len(m.autocomplete.Suggestions) > 0 {
+					selected := m.autocomplete.Suggestions[m.autocomplete.Active]
+					newValue := selected.Text
+					if selected.Description == "directory" {
+						newValue += string(os.PathSeparator)
+					}
+					m.textInput.SetValue(newValue)
+					m.textInput.CursorEnd()
+					m.autocomplete.SetSuggestions(m.textInput.Value()) // Re-evaluate suggestions after completion
+					m.autocomplete.Visible = true // Keep autocomplete visible if there are new suggestions
+					logging.Debug("Autocomplete: Enter pressed, selected '%s', new input '%s'", selected.Text, m.textInput.Value())
+					// After selecting, the input is now complete, so we fall through to submission logic
+				}
+
+				// Submission logic (moved outside the if/else for autocomplete selection)
 				input := m.textInput.Value()
 				logging.Info("User input: %s", input)
 				if input == "/exit" {

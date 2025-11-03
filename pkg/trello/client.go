@@ -73,17 +73,71 @@ func (c *Client) PopulateBoard(boardID string, plan *Plan) error {
 		listMap[list.Name] = list
 	}
 
+	// --- Label Management ---
+	// Fetch existing labels
+	existingLabels, err := board.GetLabels(trello.Defaults())
+	if err != nil {
+		return fmt.Errorf("failed to get existing labels: %w", err)
+	}
+	labelMap := make(map[string]*trello.Label)
+	for _, label := range existingLabels {
+		labelMap[label.Name] = label
+	}
+
+	// Function to get or create a label
+	getOrCreateLabel := func(name, color string) (*trello.Label, error) {
+		if label, ok := labelMap[name]; ok {
+			return label, nil
+		}
+		newLabel := &trello.Label{Name: name, Color: color}
+		err := board.CreateLabel(newLabel, trello.Defaults())
+		if err != nil {
+			return nil, fmt.Errorf("failed to create label %s: %w", name, err)
+		}
+		labelMap[name] = newLabel
+		return newLabel, nil
+	}
+
+	// Create/get Epic labels
+	epicLabels := make(map[string]*trello.Label)
+	for _, epic := range plan.Epics {
+		label, err := getOrCreateLabel(epic.Name, "sky") // Assign a color, e.g., "sky"
+		if err != nil {
+			return err
+		}
+		epicLabels[epic.Name] = label
+	}
+
+	// Create/get Priority labels
+	priorityLabels := make(map[int]*trello.Label)
+	priorityColors := map[int]string{
+		10: "red", // High priority
+		9:  "orange",
+		8:  "yellow",
+		7:  "green", // Low priority
+	}
+	for p := 7; p <= 10; p++ {
+		labelName := fmt.Sprintf("P%d", p)
+		color := priorityColors[p]
+		label, err := getOrCreateLabel(labelName, color)
+		if err != nil {
+			return err
+		}
+		priorityLabels[p] = label
+	}
+	// --- End Label Management ---
+
 	// Add epics to "Epics" list
 	epicsList := listMap["Epics"]
 	for _, epic := range plan.Epics {
-		// Create a new card object
 		card := &trello.Card{
 			Name:   epic.Name,
 			Desc:   plan.ProductVision,
 			IDList: epicsList.ID,
 		}
-
-		// Use the client to create the card
+		if label, ok := epicLabels[epic.Name]; ok {
+			card.IDLabels = []string{label.ID}
+		}
 		err := c.client.CreateCard(card, trello.Defaults())
 		if err != nil {
 			return fmt.Errorf("failed to create epic card: %w", err)
@@ -93,14 +147,19 @@ func (c *Client) PopulateBoard(boardID string, plan *Plan) error {
 	// Add user stories to "User Stories (Backlog)" list
 	storiesList := listMap["User Stories (Backlog)"]
 	for _, story := range plan.UserStories {
-		// Create a new card object
 		card := &trello.Card{
 			Name:   story.Title,
 			Desc:   story.Story,
 			IDList: storiesList.ID,
 		}
-
-		// Use the client to create the card
+		// Add Epic label
+		if label, ok := epicLabels[story.Epic]; ok {
+			card.IDLabels = append(card.IDLabels, label.ID)
+		}
+		// Add Priority label
+		if label, ok := priorityLabels[story.Priority]; ok {
+			card.IDLabels = append(card.IDLabels, label.ID)
+		}
 		err := c.client.CreateCard(card, trello.Defaults())
 		if err != nil {
 			return fmt.Errorf("failed to create story card: %w", err)
@@ -110,14 +169,44 @@ func (c *Client) PopulateBoard(boardID string, plan *Plan) error {
 	// Add tasks to "To Do (Ready)" list
 	tasksList := listMap["To Do (Ready)"]
 	for _, task := range plan.Tasks {
-		// Create a new card object
 		card := &trello.Card{
 			Name:   task.Title,
 			Desc:   task.Description,
 			IDList: tasksList.ID,
 		}
+		// Add labels from task.Labels field
+		for _, labelName := range task.Labels {
+			if label, ok := labelMap[labelName]; ok { // Check if label already exists or was created
+				card.IDLabels = append(card.IDLabels, label.ID)
+			} else {
+				// If label doesn't exist, create it with a default color (e.g., "purple")
+				newLabel, err := getOrCreateLabel(labelName, "purple")
+				if err != nil {
+					return err
+				}
+				card.IDLabels = append(card.IDLabels, newLabel.ID)
+			}
+		}
 
-		// Use the client to create the card
+		// Find the corresponding UserStory to get its Epic and Priority
+		var parentStory *UserStory
+		for _, story := range plan.UserStories {
+			if story.Title == task.StoryTitle {
+				parentStory = &story
+				break
+			}
+		}
+		if parentStory != nil {
+			// Add Epic label from parent story
+			if label, ok := epicLabels[parentStory.Epic]; ok {
+				card.IDLabels = append(card.IDLabels, label.ID)
+			}
+			// Add Priority label from parent story
+			if label, ok := priorityLabels[parentStory.Priority]; ok {
+				card.IDLabels = append(card.IDLabels, label.ID)
+			}
+		}
+
 		err := c.client.CreateCard(card, trello.Defaults())
 		if err != nil {
 			return fmt.Errorf("failed to create task card: %w", err)

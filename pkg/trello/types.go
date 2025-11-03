@@ -24,4 +24,5 @@ type Task struct {
 	Description  string   `json:"description"`
 	StoryTitle   string   `json:"story_title"`
 	Dependencies []string `json:"dependencies"`
+	Labels       []string `json:"labels"` // Added for Trello labels
 }
