@@ -12,14 +12,35 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"plansmith/pkg/logging"
+	"plansmith/pkg/smith"
 	"plansmith/pkg/state"
 	"plansmith/pkg/trello"
 )
 
 // Messages for async operations
-type generationMsg struct {
-	plan *state.Plan
-	err  error
+type visionGeneratedMsg struct {
+	vision *smith.VisionResponse
+	err    error
+}
+
+type storiesForEpicGeneratedMsg struct {
+	stories *smith.StoryResponse
+	err     error
+}
+
+type allStoriesGeneratedMsg struct {
+	stories []state.UserStory
+	err     error
+}
+
+type tasksForStoryGeneratedMsg struct {
+	tasks *smith.TaskResponse
+	err   error
+}
+
+type allTasksGeneratedMsg struct {
+	tasks []state.Task
+	err   error
 }
 
 type trelloMsg struct {
@@ -131,7 +152,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.textInput.SetValue(newValue)
 					m.textInput.CursorEnd()
 					m.autocomplete.SetSuggestions(m.textInput.Value()) // Re-evaluate suggestions after completion
-					m.autocomplete.Visible = true // Keep autocomplete visible if there are new suggestions
+					m.autocomplete.Visible = true                       // Keep autocomplete visible if there are new suggestions
 					logging.Debug("Autocomplete: Enter pressed, selected '%s', new input '%s'", selected.Text, m.textInput.Value())
 					// After selecting, the input is now complete, so we fall through to submission logic
 				}
@@ -192,7 +213,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.markdownPath = input
 					m.chat.AddMessage("assistant", fmt.Sprintf("Thanks! I'll start crafting a plan from '%s'.", input))
 					m.chat.SetLoading(true)
-					cmds = append(cmds, m.generatePlan())
+					cmds = append(cmds, m.generateVisionCmd())
 					m.conversationContext = ContextNone
 					logging.Info("Markdown path set to %s, starting plan generation.", input)
 				case ContextWaitingForPlanConfirmation:
@@ -263,12 +284,67 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.filePicker.visible = false
 		m.textInput.CursorEnd()
 
-	case generationMsg:
+	case visionGeneratedMsg:
 		m.chat.SetLoading(false)
 		if msg.err != nil {
-			m.chat.AddMessage("system", fmt.Sprintf("Error generating plan: %v", msg.err))
+			m.chat.AddMessage("system", fmt.Sprintf("Error generating vision: %v", msg.err))
 		} else {
-			m.plan = msg.plan
+			m.plan = &state.Plan{
+				ProjectName:   msg.vision.ProjectName,
+				ProductVision: msg.vision.ProductVision,
+			}
+			for _, epicName := range msg.vision.Epics {
+				m.plan.Epics = append(m.plan.Epics, state.Epic{Name: epicName})
+			}
+			m.chat.AddMessage("assistant", "Generating stories...")
+			m.chat.SetLoading(true)
+			cmds = append(cmds, m.generateStoriesCmd())
+		}
+
+	case storiesForEpicGeneratedMsg:
+		if msg.err != nil {
+			m.chat.AddMessage("system", fmt.Sprintf("Error generating stories for epic: %v", msg.err))
+		} else {
+			if len(m.plan.Epics) > 0 {
+				cmds = append(cmds, m.generateStoriesCmd())
+			} else {
+				m.chat.AddMessage("assistant", "Generating tasks...")
+				m.chat.SetLoading(true)
+				cmds = append(cmds, m.generateTasksCmd())
+			}
+		}
+
+	case allStoriesGeneratedMsg:
+		m.chat.SetLoading(false)
+		if msg.err != nil {
+			m.chat.AddMessage("system", fmt.Sprintf("Error generating stories: %v", msg.err))
+		} else {
+			m.chat.AddMessage("assistant", "Generating tasks...")
+			m.chat.SetLoading(true)
+			cmds = append(cmds, m.generateTasksCmd())
+		}
+
+	case tasksForStoryGeneratedMsg:
+		if msg.err != nil {
+			m.chat.AddMessage("system", fmt.Sprintf("Error generating tasks for story: %v", msg.err))
+		} else {
+			if len(m.plan.UserStories) > 0 {
+				cmds = append(cmds, m.generateTasksCmd())
+			} else {
+				m.chat.AddMessage("assistant", "Plan generated successfully!")
+				formattedPlan := formatPlan(m.plan)
+				m.chat.AddMessage("assistant", "Here's the plan I've crafted:\n"+formattedPlan)
+				m.chat.AddMessage("assistant", "Please review it. Type 'yes' to confirm or 'no' to discard.")
+				m.conversationContext = ContextWaitingForPlanConfirmation
+			}
+		}
+
+	case allTasksGeneratedMsg:
+		m.chat.SetLoading(false)
+		if msg.err != nil {
+			m.chat.AddMessage("system", fmt.Sprintf("Error generating tasks: %v", msg.err))
+		} else {
+			m.chat.AddMessage("assistant", "Plan generated successfully!")
 			formattedPlan := formatPlan(m.plan)
 			m.chat.AddMessage("assistant", "Here's the plan I've crafted:\n"+formattedPlan)
 			m.chat.AddMessage("assistant", "Please review it. Type 'yes' to confirm or 'no' to discard.")
@@ -287,63 +363,66 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(cmds...)
 }
 
-func (m Model) generatePlan() tea.Cmd {
+func (m *Model) generateVisionCmd() tea.Cmd {
 	return func() tea.Msg {
-		logging.Info("Generating plan from file: %s", m.markdownPath)
+		logging.Info("Generating vision from file: %s", m.markdownPath)
 
 		markdown, err := os.ReadFile(m.markdownPath)
 		if err != nil {
-			return generationMsg{err: fmt.Errorf("failed to read markdown file: %w", err)}
+			return visionGeneratedMsg{err: fmt.Errorf("failed to read markdown file: %w", err)}
 		}
 
 		m.chat.AddMessage("assistant", "Generating vision...")
 		vision, err := m.agent.GenerateVision(string(markdown))
 		if err != nil {
-			return generationMsg{err: fmt.Errorf("failed to generate vision: %w", err)}
+			return visionGeneratedMsg{err: fmt.Errorf("failed to generate vision: %w", err)}
 		}
 
-		plan := &state.Plan{
-			ProjectName:   vision.ProjectName,
-			ProductVision: vision.ProductVision,
-			Epics:         []state.Epic{},
-			UserStories:   []state.UserStory{},
-			Tasks:         []state.Task{},
+		return visionGeneratedMsg{vision: vision}
+	}
+}
+
+func (m *Model) generateStoriesCmd() tea.Cmd {
+	return func() tea.Msg {
+		if len(m.plan.Epics) == 0 {
+		return allStoriesGeneratedMsg{stories: m.plan.UserStories}
 		}
 
-		err = m.stateManager.SavePlan(plan)
+		epic := m.plan.Epics[0]
+		m.plan.Epics = m.plan.Epics[1:]
+
+		m.chat.AddMessage("assistant", fmt.Sprintf("Generating stories for epic '%s'...", epic.Name))
+		stories, err := m.agent.GenerateStories(m.plan.ProductVision, epic.Name)
 		if err != nil {
-			logging.Error("Failed to save plan: %v", err)
-			return generationMsg{err: err}
+			return storiesForEpicGeneratedMsg{err: fmt.Errorf("failed to generate stories for epic %s: %w", epic.Name, err)}
+		}
+		for _, story := range stories.UserStories {
+			m.plan.UserStories = append(m.plan.UserStories, state.UserStory{Title: story.Title, Story: story.Story, Priority: story.Priority, Epic: story.Epic})
 		}
 
-		for _, epicName := range vision.Epics {
-			plan.Epics = append(plan.Epics, state.Epic{Name: epicName})
-			m.chat.AddMessage("assistant", fmt.Sprintf("Generating stories for epic '%s'...", epicName))
-			stories, err := m.agent.GenerateStories(vision.ProductVision, epicName)
-			if err != nil {
-				return generationMsg{err: fmt.Errorf("failed to generate stories for epic %s: %w", epicName, err)}
-			}
+		return storiesForEpicGeneratedMsg{stories: stories}
+	}
+}
 
-			for _, story := range stories.UserStories {
-				plan.UserStories = append(plan.UserStories, state.UserStory{Title: story.Title, Story: story.Story, Priority: story.Priority, Epic: story.Epic})
-				m.chat.AddMessage("assistant", fmt.Sprintf("Generating tasks for story '%s'...", story.Title))
-				tasks, err := m.agent.GenerateTasks(story.Title, story.Story)
-				if err != nil {
-					return generationMsg{err: fmt.Errorf("failed to generate tasks for story %s: %w", story.Title, err)}
-				}
-
-				for _, task := range tasks.Tasks {
-					plan.Tasks = append(plan.Tasks, state.Task{Title: task.Title, Description: task.Description, StoryTitle: task.StoryTitle, Dependencies: task.Dependencies})
-				}
-				err = m.stateManager.SavePlan(plan)
-				if err != nil {
-					logging.Error("Failed to save plan: %v", err)
-					return generationMsg{err: err}
-				}
-			}
+func (m *Model) generateTasksCmd() tea.Cmd {
+	return func() tea.Msg {
+		if len(m.plan.UserStories) == 0 {
+return allTasksGeneratedMsg{tasks: m.plan.Tasks}
 		}
 
-		return generationMsg{plan: plan}
+		story := m.plan.UserStories[0]
+		m.plan.UserStories = m.plan.UserStories[1:]
+
+		m.chat.AddMessage("assistant", fmt.Sprintf("Generating tasks for story '%s'...", story.Title))
+		tasks, err := m.agent.GenerateTasks(story.Title, story.Story)
+		if err != nil {
+			return tasksForStoryGeneratedMsg{err: fmt.Errorf("failed to generate tasks for story %s: %w", story.Title, err)}
+		}
+		for _, task := range tasks.Tasks {
+			m.plan.Tasks = append(m.plan.Tasks, state.Task{Title: task.Title, Description: task.Description, StoryTitle: task.StoryTitle, Dependencies: task.Dependencies})
+		}
+
+		return tasksForStoryGeneratedMsg{tasks: tasks}
 	}
 }
 
