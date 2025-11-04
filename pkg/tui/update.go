@@ -339,19 +339,25 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
-	case allTasksGeneratedMsg:
-		m.chat.SetLoading(false)
-		if msg.err != nil {
-			m.chat.AddMessage("system", fmt.Sprintf("Error generating tasks: %v", msg.err))
-		} else {
-			m.chat.AddMessage("assistant", "Plan generated successfully!")
-			formattedPlan := formatPlan(m.plan)
-			m.chat.AddMessage("assistant", "Here's the plan I've crafted:\n"+formattedPlan)
-			m.chat.AddMessage("assistant", "Please review it. Type 'yes' to confirm or 'no' to discard.")
-			m.conversationContext = ContextWaitingForPlanConfirmation
-		}
-
-	case trelloMsg:
+			case allTasksGeneratedMsg:
+				m.chat.SetLoading(false)
+				if msg.err != nil {
+					m.chat.AddMessage("system", fmt.Sprintf("Error generating tasks: %v", msg.err))
+				} else {
+					m.chat.AddMessage("assistant", "Plan generated successfully!")
+					// Write the plan to a file
+					planFileName := fmt.Sprintf("%s_plan.txt", m.plan.ProjectName)
+					formattedPlan := formatPlan(m.plan)
+					err := os.WriteFile(planFileName, []byte(formattedPlan), 0644)
+					if err != nil {
+						m.chat.AddMessage("system", fmt.Sprintf("Error writing plan to file: %v", err))
+					} else {
+						m.chat.AddMessage("assistant", fmt.Sprintf("I've saved the plan to '%s'.", planFileName))
+						m.chat.AddMessage("assistant", "Please review the plan and type 'yes' to approve or 'no' to discard.")
+					}
+					m.conversationContext = ContextWaitingForPlanConfirmation
+				}
+		case trelloMsg:
 		m.chat.SetLoading(false)
 		if msg.err != nil {
 			m.chat.AddMessage("system", fmt.Sprintf("Error creating Trello board: %v", msg.err))
