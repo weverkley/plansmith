@@ -16,21 +16,24 @@ type Plan struct {
 }
 
 type Epic struct {
+	ID   int    `json:"id"`
 	Name string `json:"name"`
 }
 
 type UserStory struct {
+	ID       int    `json:"id"`
 	Title    string `json:"title"`
 	Story    string `json:"story"`
 	Priority int    `json:"priority"`
-	Epic     string `json:"epic"`
+	EpicID   int    `json:"epic_id"`
 }
 
 type Task struct {
-	Title        string   `json:"title"`
-	Description  string   `json:"description"`
-	StoryTitle   string   `json:"story_title"`
-	Dependencies []string `json:"dependencies"`
+	ID           int   `json:"id"`
+	Title        string `json:"title"`
+	Description  string `json:"description"`
+	StoryID      int   `json:"story_id"`
+	Dependencies []int  `json:"dependencies"`
 }
 
 type State struct {

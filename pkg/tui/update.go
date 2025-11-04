@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath" // Added import
+	"strconv"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/cursor"
@@ -293,8 +294,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				ProjectName:   msg.vision.ProjectName,
 				ProductVision: msg.vision.ProductVision,
 			}
-			for _, epicName := range msg.vision.Epics {
-				m.plan.Epics = append(m.plan.Epics, state.Epic{Name: epicName})
+			for _, epic := range msg.vision.Epics {
+				m.plan.Epics = append(m.plan.Epics, state.Epic{ID: epic.ID, Name: epic.Name})
 			}
 			m.chat.AddMessage("assistant", "Generating stories...")
 			m.chat.SetLoading(true)
@@ -384,6 +385,10 @@ func (m *Model) generateVisionCmd() tea.Cmd {
 			return visionGeneratedMsg{err: fmt.Errorf("failed to generate vision: %w", err)}
 		}
 
+		for i := range vision.Epics {
+			vision.Epics[i].ID = i + 1
+		}
+
 		return visionGeneratedMsg{vision: vision}
 	}
 }
@@ -391,7 +396,7 @@ func (m *Model) generateVisionCmd() tea.Cmd {
 func (m *Model) generateStoriesCmd() tea.Cmd {
 	return func() tea.Msg {
 		if len(m.plan.Epics) == 0 {
-		return allStoriesGeneratedMsg{stories: m.plan.UserStories}
+			return allStoriesGeneratedMsg{stories: m.plan.UserStories}
 		}
 
 		epic := m.plan.Epics[0]
@@ -402,8 +407,10 @@ func (m *Model) generateStoriesCmd() tea.Cmd {
 		if err != nil {
 			return storiesForEpicGeneratedMsg{err: fmt.Errorf("failed to generate stories for epic %s: %w", epic.Name, err)}
 		}
-		for _, story := range stories.UserStories {
-			m.plan.UserStories = append(m.plan.UserStories, state.UserStory{Title: story.Title, Story: story.Story, Priority: story.Priority, Epic: story.Epic})
+		for i := range stories.UserStories {
+			stories.UserStories[i].ID = len(m.plan.UserStories) + i + 1
+			stories.UserStories[i].EpicID = epic.ID
+			m.plan.UserStories = append(m.plan.UserStories, state.UserStory{ID: stories.UserStories[i].ID, Title: stories.UserStories[i].Title, Story: stories.UserStories[i].Story, Priority: stories.UserStories[i].Priority, EpicID: stories.UserStories[i].EpicID})
 		}
 
 		return storiesForEpicGeneratedMsg{stories: stories}
@@ -413,7 +420,7 @@ func (m *Model) generateStoriesCmd() tea.Cmd {
 func (m *Model) generateTasksCmd() tea.Cmd {
 	return func() tea.Msg {
 		if len(m.plan.UserStories) == 0 {
-return allTasksGeneratedMsg{tasks: m.plan.Tasks}
+			return allTasksGeneratedMsg{tasks: m.plan.Tasks}
 		}
 
 		story := m.plan.UserStories[0]
@@ -424,14 +431,15 @@ return allTasksGeneratedMsg{tasks: m.plan.Tasks}
 		if err != nil {
 			return tasksForStoryGeneratedMsg{err: fmt.Errorf("failed to generate tasks for story %s: %w", story.Title, err)}
 		}
-		for _, task := range tasks.Tasks {
-			m.plan.Tasks = append(m.plan.Tasks, state.Task{Title: task.Title, Description: task.Description, StoryTitle: task.StoryTitle, Dependencies: task.Dependencies})
+		for i := range tasks.Tasks {
+			tasks.Tasks[i].ID = len(m.plan.Tasks) + i + 1
+			tasks.Tasks[i].StoryID = story.ID
+			m.plan.Tasks = append(m.plan.Tasks, state.Task{ID: tasks.Tasks[i].ID, Title: tasks.Tasks[i].Title, Description: tasks.Tasks[i].Description, StoryID: tasks.Tasks[i].StoryID, Dependencies: tasks.Tasks[i].Dependencies})
 		}
 
 		return tasksForStoryGeneratedMsg{tasks: tasks}
 	}
 }
-
 func (m Model) createTrelloBoard(boardName string) tea.Cmd {
 	return func() tea.Msg {
 		logging.Info("Creating Trello board for plan: %s", m.plan.ProjectName)
@@ -453,15 +461,20 @@ func (m Model) createTrelloBoard(boardName string) tea.Cmd {
 		}
 
 		for _, epic := range m.plan.Epics {
-			trelloPlan.Epics = append(trelloPlan.Epics, trello.Epic{Name: epic.Name})
+			trelloPlan.Epics = append(trelloPlan.Epics, trello.Epic{ID: epic.ID, Name: epic.Name})
 		}
 
 		for _, story := range m.plan.UserStories {
-			trelloPlan.UserStories = append(trelloPlan.UserStories, trello.UserStory{Title: story.Title, Story: story.Story, Priority: story.Priority, Epic: story.Epic})
+			trelloPlan.UserStories = append(trelloPlan.UserStories, trello.UserStory{ID: story.ID, Title: story.Title, Story: story.Story, Priority: story.Priority, EpicID: story.EpicID})
 		}
 
 		for _, task := range m.plan.Tasks {
-			trelloPlan.Tasks = append(trelloPlan.Tasks, trello.Task{Title: task.Title, Description: task.Description, StoryTitle: task.StoryTitle, Dependencies: task.Dependencies})
+			// Convert dependencies from []int to []string
+			var deps []string
+			for _, depID := range task.Dependencies {
+				deps = append(deps, strconv.Itoa(depID))
+			}
+			trelloPlan.Tasks = append(trelloPlan.Tasks, trello.Task{ID: task.ID, Title: task.Title, Description: task.Description, StoryID: task.StoryID, Dependencies: deps})
 		}
 
 		err = m.trelloClient.PopulateBoard(board.ID, trelloPlan)
@@ -484,15 +497,15 @@ func formatPlan(plan *state.Plan) string {
 	b.WriteString(fmt.Sprintf("Product Vision: %s\n", plan.ProductVision))
 	b.WriteString("Epics:\n")
 	for _, epic := range plan.Epics {
-		b.WriteString(fmt.Sprintf("- %s\n", epic.Name))
+		b.WriteString(fmt.Sprintf("- [%d] %s\n", epic.ID, epic.Name))
 	}
 	b.WriteString("User Stories:\n")
 	for _, story := range plan.UserStories {
-		b.WriteString(fmt.Sprintf("- %s (Epic: %s)\n", story.Title, story.Epic))
+		b.WriteString(fmt.Sprintf("- [%d] %s (Epic: %d)\n", story.ID, story.Title, story.EpicID))
 	}
 	b.WriteString("Tasks:\n")
 	for _, task := range plan.Tasks {
-		b.WriteString(fmt.Sprintf("- %s (Story: %s): %s\n", task.Title, task.StoryTitle, task.Description))
+		b.WriteString(fmt.Sprintf("- [%d] %s (Story: %d): %s\n", task.ID, task.Title, task.StoryID, task.Description))
 	}
 	return b.String()
 }

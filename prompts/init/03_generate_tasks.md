@@ -5,17 +5,18 @@ You must strictly adhere to the following rules:
     - **Title:** {{.StoryTitle}}
     - **Story:** {{.StoryBody}}
 2.  Generate 2-5 granular, technical sub-tasks required to complete this story.
-3.  **CRITICAL:** For each task, identify any other tasks *in this list* that MUST be completed first. Use the exact task `title` for the dependency. If there are no dependencies, return an empty array.
+3.  **CRITICAL:** For each task, identify any other tasks *in this list or from other user stories* that MUST be completed first. Use the exact task `id` for the dependency. If there are no dependencies, return an empty array.
 4.  You MUST respond ONLY with a single, valid JSON object. Do not include any text, apologies, or explanations before or after the JSON.
 
 **JSON Schema:**
 {
  "tasks": [
     {
+     "id": "integer",
      "title": "string (The technical task)",
      "description": "string (A brief 1-sentence description of the task)",
-     "story_title": "{{.StoryTitle}}",
-     "dependencies": ["string (task title)", ...]
+     "story_id": "integer",
+     "dependencies": ["integer", ...]
    }
  ]
 }

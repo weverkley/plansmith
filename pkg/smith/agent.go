@@ -28,7 +28,12 @@ func (a *Agent) Executor() ai.AIExecutor {
 type VisionResponse struct {
 	ProjectName   string   `json:"project_name"`
 	ProductVision string   `json:"product_vision"`
-	Epics         []string `json:"epics"`
+	Epics         []Epic   `json:"epics"`
+}
+
+type Epic struct {
+	ID   int    `json:"id"`
+	Name string `json:"name"`
 }
 
 func (a *Agent) GenerateVision(markdownInput string) (*VisionResponse, error) {
@@ -71,10 +76,11 @@ type StoryResponse struct {
 }
 
 type UserStory struct {
+	ID       int    `json:"id"`
 	Title    string `json:"title"`
 	Story    string `json:"story"`
 	Priority int    `json:"priority"`
-	Epic     string `json:"epic"`
+	EpicID   int    `json:"epic_id"`
 }
 
 func (a *Agent) GenerateStories(vision, epic string) (*StoryResponse, error) {
@@ -117,10 +123,11 @@ type TaskResponse struct {
 }
 
 type Task struct {
-	Title        string   `json:"title"`
-	Description  string   `json:"description"`
-	StoryTitle   string   `json:"story_title"`
-	Dependencies []string `json:"dependencies"`
+	ID           int   `json:"id"`
+	Title        string `json:"title"`
+	Description  string `json:"description"`
+	StoryID      int   `json:"story_id"`
+	Dependencies []int  `json:"dependencies"`
 }
 
 func (a *Agent) GenerateTasks(storyTitle, story string) (*TaskResponse, error) {

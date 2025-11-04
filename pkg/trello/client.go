@@ -153,7 +153,14 @@ func (c *Client) PopulateBoard(boardID string, plan *Plan) error {
 			IDList: storiesList.ID,
 		}
 		// Add Epic label
-		if label, ok := epicLabels[story.Epic]; ok {
+		var epicName string
+		for _, epic := range plan.Epics {
+			if epic.ID == story.EpicID {
+				epicName = epic.Name
+				break
+			}
+		}
+		if label, ok := epicLabels[epicName]; ok {
 			card.IDLabels = append(card.IDLabels, label.ID)
 		}
 		// Add Priority label
@@ -191,14 +198,21 @@ func (c *Client) PopulateBoard(boardID string, plan *Plan) error {
 		// Find the corresponding UserStory to get its Epic and Priority
 		var parentStory *UserStory
 		for _, story := range plan.UserStories {
-			if story.Title == task.StoryTitle {
+			if story.ID == task.StoryID {
 				parentStory = &story
 				break
 			}
 		}
 		if parentStory != nil {
 			// Add Epic label from parent story
-			if label, ok := epicLabels[parentStory.Epic]; ok {
+			var epicName string
+			for _, epic := range plan.Epics {
+				if epic.ID == parentStory.EpicID {
+					epicName = epic.Name
+					break
+				}
+			}
+			if label, ok := epicLabels[epicName]; ok {
 				card.IDLabels = append(card.IDLabels, label.ID)
 			}
 			// Add Priority label from parent story

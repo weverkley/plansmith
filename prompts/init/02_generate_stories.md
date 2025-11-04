@@ -5,17 +5,18 @@ You must strictly adhere to the following rules:
 2.  The Epic you are currently breaking down is: {{.EpicName}}
 3.  Generate 3-5 User Stories for this Epic.
 4.  Each User Story MUST follow the format: "As a [USER], I want [FEATURE], so that [VALUE]."
-5.  Assign a priority (1-10, 10=highest) to each story based on its importance to the Epic.
+5.  Assign a priority (1-10, 10=highest) to each story based on its importance to the Epic and the overall project build order. Foundational stories should have higher priority.
 6.  You MUST respond ONLY with a single, valid JSON object. Do not include any text, apologies, or explanations before or after the JSON.
 
 **JSON Schema:**
 {
  "user_stories": [
    {
+     "id": "integer",
      "title": "string (A short title for the story)",
      "story": "string (As a user, I want..., so that...)",
      "priority": "integer",
-     "epic": "{{.EpicName}}"
+     "epic_id": "integer"
    }
  ]
 }
