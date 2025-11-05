@@ -5,7 +5,11 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"plansmith/pkg/ai"
 	"plansmith/pkg/logging"
+	"plansmith/pkg/smith"
+	"plansmith/pkg/state"
+	"plansmith/pkg/trello"
 	"plansmith/pkg/tui"
 	"strings"
 	"time"
@@ -39,7 +43,11 @@ with human review at every step.`,
 		defer logging.CloseGlobalLogger()
 
 		logging.Info("Starting PlanSmith application")
-		StartTUI()
+		if len(args) == 0 {
+			StartTUI()
+		} else {
+			runNonInteractive(args)
+		}
 		logging.Info("PlanSmith application finished")
 	},
 }
@@ -158,4 +166,133 @@ func saveChatHistory(messages []tui.ChatMessage, plansmithDir string) {
 		}
 	}
 	logging.Info("Chat history saved to %s", logFileName)
+}
+
+func runNonInteractive(args []string) {
+	if len(args) < 1 {
+		fmt.Println("Usage: plansmith <markdown_file> [trello_board_name]")
+		return
+	}
+
+	markdownFile := args[0]
+	var boardName string
+	if len(args) > 1 {
+		boardName = args[1]
+	}
+
+	// Initialize AI executor
+	var executor ai.AIExecutor
+	aiProvider := viper.GetString("ai.default_provider")
+	var apiKey string
+	if aiProvider == "gemini" {
+		apiKey = viper.GetString("ai.keys.gemini")
+	} else if aiProvider == "openai" {
+		apiKey = viper.GetString("ai.keys.openai")
+	} else if aiProvider == "qwen" {
+		apiKey = viper.GetString("ai.keys.qwen")
+	}
+
+	if apiKey != "" {
+		var err error
+		executor, err = ai.NewExecutor(aiProvider, apiKey, "")
+		if err != nil {
+			log.Fatalf("Failed to create AI executor: %v", err)
+		}
+	} else {
+		log.Fatalf("No API key found for provider: %s", aiProvider)
+	}
+
+	// Read markdown file
+	markdown, err := os.ReadFile(markdownFile)
+	if err != nil {
+		log.Fatalf("Failed to read markdown file: %v", err)
+	}
+
+	// Create smith agent
+	agent := smith.NewAgent(executor)
+
+	// Generate plan
+	vision, err := agent.GenerateVision(string(markdown))
+	if err != nil {
+		log.Fatalf("Failed to generate vision: %v", err)
+	}
+
+	plan := &state.Plan{
+		ProjectName:   vision.ProjectName,
+		ProductVision: vision.ProductVision,
+	}
+
+	for _, epic := range vision.Epics {
+		plan.Epics = append(plan.Epics, state.Epic{ID: epic.ID, Name: epic.Name})
+	}
+
+	for _, epic := range plan.Epics {
+		stories, err := agent.GenerateStories(plan.ProductVision, epic.Name, epic.ID)
+		if err != nil {
+			log.Fatalf("Failed to generate stories for epic %s: %v", epic.Name, err)
+		}
+		for _, story := range stories.UserStories {
+			plan.UserStories = append(plan.UserStories, state.UserStory{ID: story.ID, Title: story.Title, Story: story.Story, Priority: story.Priority, EpicID: story.EpicID})
+		}
+	}
+
+	for _, story := range plan.UserStories {
+		tasks, err := agent.GenerateTasks(story.Title, story.Story, story.ID)
+		if err != nil {
+			log.Fatalf("Failed to generate tasks for story %s: %v", story.Title, err)
+		}
+		for _, task := range tasks.Tasks {
+			plan.Tasks = append(plan.Tasks, state.Task{ID: task.ID, Title: task.Title, Description: task.Description, StoryID: task.StoryID, Dependencies: task.Dependencies, Labels: task.Labels})
+		}
+	}
+
+	// Create Trello client
+	key := viper.GetString("trello.key")
+	token := viper.GetString("trello.token")
+	if key == "" || token == "" {
+		log.Fatalf("Trello key or token not found in config")
+	}
+	trelloClient := trello.NewClient(key, token)
+
+	// Create Trello board
+	if boardName == "" {
+		boardName = plan.ProjectName
+	}
+
+	trelloBoard, err := trelloClient.CreateProjectBoard(boardName)
+	if err != nil {
+		log.Fatalf("Failed to create Trello board: %v", err)
+	}
+
+	trelloPlan := &trello.Plan{
+		ProjectName:   plan.ProjectName,
+		ProductVision: plan.ProductVision,
+		Epics:         []trello.Epic{},
+		UserStories:   []trello.UserStory{},
+		Tasks:         []trello.Task{},
+	}
+
+	for _, epic := range plan.Epics {
+		trelloPlan.Epics = append(trelloPlan.Epics, trello.Epic{ID: epic.ID, Name: epic.Name})
+	}
+
+	for _, story := range plan.UserStories {
+		trelloPlan.UserStories = append(trelloPlan.UserStories, trello.UserStory{ID: story.ID, Title: story.Title, Story: story.Story, Priority: story.Priority, EpicID: story.EpicID})
+	}
+
+	for _, task := range plan.Tasks {
+		trelloPlan.Tasks = append(trelloPlan.Tasks, trello.Task{ID: task.ID, Title: task.Title, Description: task.Description, StoryID: task.StoryID, Dependencies: task.Dependencies, Labels: task.Labels})
+	}
+
+	err = trelloClient.PopulateBoard(trelloBoard.ID, trelloPlan)
+	if err != nil {
+		log.Fatalf("Failed to populate Trello board: %v", err)
+	}
+
+	err = trelloClient.LinkCards(trelloBoard.ID, trelloPlan)
+	if err != nil {
+		log.Fatalf("Failed to link cards on Trello board: %v", err)
+	}
+
+	fmt.Printf("Trello board created successfully: %s\n", trelloBoard.URL)
 }
