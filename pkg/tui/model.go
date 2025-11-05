@@ -54,6 +54,8 @@ type Model struct {
 	generatingMsg       string
 	markdownPath        string
 	confirmationList    list.Model
+	epicIndex           int
+	storyIndex          int
 
 	// AI and services
 	agent        *smith.Agent
@@ -179,6 +181,8 @@ func NewModel(dummy bool) Model {
 		aiProvider:          aiProvider,
 		aiModel:             aiModel,
 		confirmationList:    confirmationList,
+		epicIndex:           0,
+		storyIndex:          0,
 	}
 }
 

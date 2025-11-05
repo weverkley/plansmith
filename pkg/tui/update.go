@@ -145,7 +145,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					if input == "yes" {
 						m.chat.AddMessage("assistant", "Generating tasks...")
 						m.chat.SetLoading(true)
-						cmds = append(cmds, m.generateTasksCmd())
+						for i := 0; i < len(m.plan.UserStories); i++ {
+							cmds = append(cmds, m.generateTasksCmd())
+						}
 						m.conversationContext = ContextNone // Reset context after starting generation
 						logging.Info("Stories confirmed, starting task generation.")
 					} else if input == "no" {
@@ -365,6 +367,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.textInput.CursorEnd()
 
 	case visionGeneratedMsg:
+		logging.Info("visionGeneratedMsg received")
 		m.chat.SetLoading(false)
 		if msg.err != nil {
 			m.chat.AddMessage("system", fmt.Sprintf("Error generating vision: %v", msg.err))
@@ -373,6 +376,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				ProjectName:   msg.vision.ProjectName,
 				ProductVision: msg.vision.ProductVision,
 			}
+			m.epicIndex = 0
+			m.storyIndex = 0
 			for _, epic := range msg.vision.Epics {
 				m.plan.Epics = append(m.plan.Epics, state.Epic{ID: epic.ID, Name: epic.Name})
 			}
@@ -388,21 +393,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.conversationContext = ContextWaitingForVisionConfirmation
 		}
 	case storiesForEpicGeneratedMsg:
+		logging.Info("storiesForEpicGeneratedMsg received")
 		if msg.err != nil {
 			m.chat.AddMessage("system", fmt.Sprintf("Error generating stories for epic: %v", msg.err))
 		} else {
-			if len(m.plan.Epics) > 0 {
+			m.epicIndex++
+			if m.epicIndex < len(m.plan.Epics) {
 				cmds = append(cmds, m.generateStoriesCmd())
 			} else {
-				formattedPlan := formatPlan(m.plan)
-				m.chat.AddMessage("assistant", "All stories generated! Here's the plan so far:\n"+formattedPlan)
-				m.chat.AddMessage("assistant", "Do you want to proceed with generating tasks based on these stories? (yes/no)")
-				items := []list.Item{
-					item{title: "yes", desc: "Proceed with these stories"},
-					item{title: "no", desc: "Discard and restart story generation"},
-				}
-				m.confirmationList.SetItems(items)
-				m.conversationContext = ContextWaitingForStoriesConfirmation
+				cmds = append(cmds, func() tea.Msg { return allStoriesGeneratedMsg{stories: m.plan.UserStories} })
 			}
 		}
 
@@ -425,14 +424,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			m.chat.AddMessage("system", fmt.Sprintf("Error generating tasks for story: %v", msg.err))
 		} else {
-			if len(m.plan.UserStories) > 0 {
+			m.storyIndex++
+			if m.storyIndex < len(m.plan.UserStories) {
 				cmds = append(cmds, m.generateTasksCmd())
 			} else {
-				m.chat.AddMessage("assistant", "Plan generated successfully!")
-				formattedPlan := formatPlan(m.plan)
-				m.chat.AddMessage("assistant", "Here's the plan I've crafted:\n"+formattedPlan)
-				m.chat.AddMessage("assistant", "Please review it. Type 'yes' to confirm or 'no' to discard.")
-				m.conversationContext = ContextWaitingForPlanConfirmation
+				cmds = append(cmds, func() tea.Msg { return allTasksGeneratedMsg{tasks: m.plan.Tasks} })
 			}
 		}
 
@@ -494,12 +490,11 @@ func (m *Model) generateVisionCmd() tea.Cmd {
 
 func (m *Model) generateStoriesCmd() tea.Cmd {
 	return func() tea.Msg {
-		if len(m.plan.Epics) == 0 {
+		if m.epicIndex >= len(m.plan.Epics) {
 			return allStoriesGeneratedMsg{stories: m.plan.UserStories}
 		}
 
-		epic := m.plan.Epics[0]
-		m.plan.Epics = m.plan.Epics[1:]
+		epic := m.plan.Epics[m.epicIndex]
 
 		m.chat.AddMessage("assistant", fmt.Sprintf("Generating stories for epic '%s'...", epic.Name))
 		stories, err := m.agent.GenerateStories(m.plan.ProductVision, epic.Name, epic.ID)
@@ -507,7 +502,7 @@ func (m *Model) generateStoriesCmd() tea.Cmd {
 			return storiesForEpicGeneratedMsg{err: fmt.Errorf("failed to generate stories for epic %s: %w", epic.Name, err)}
 		}
 		for i := range stories.UserStories {
-			stories.UserStories[i].ID = smith.GenerateID("STORY", len(m.plan.UserStories) + i + 1)
+			stories.UserStories[i].ID = smith.GenerateID("STORY", len(m.plan.UserStories)+i+1)
 			stories.UserStories[i].EpicID = epic.ID
 			m.plan.UserStories = append(m.plan.UserStories, state.UserStory{ID: stories.UserStories[i].ID, Title: stories.UserStories[i].Title, Story: stories.UserStories[i].Story, Priority: stories.UserStories[i].Priority, EpicID: stories.UserStories[i].EpicID})
 		}
@@ -520,7 +515,7 @@ func (m *Model) generateTasksCmd() tea.Cmd {
 
 	return func() tea.Msg {
 
-		if len(m.plan.UserStories) == 0 {
+		if m.storyIndex >= len(m.plan.UserStories) {
 
 			return allTasksGeneratedMsg{tasks: m.plan.Tasks}
 
@@ -528,11 +523,7 @@ func (m *Model) generateTasksCmd() tea.Cmd {
 
 
 
-		story := m.plan.UserStories[0]
-
-		m.plan.UserStories = m.plan.UserStories[1:]
-
-
+		story := m.plan.UserStories[m.storyIndex]
 
 		m.chat.AddMessage("assistant", fmt.Sprintf("Generating tasks for story '%s'...", story.Title))
 
@@ -546,7 +537,7 @@ func (m *Model) generateTasksCmd() tea.Cmd {
 
 		for i := range tasks.Tasks {
 
-			tasks.Tasks[i].ID = smith.GenerateID("TASK", len(m.plan.Tasks) + i + 1)
+			tasks.Tasks[i].ID = smith.GenerateID("TASK", len(m.plan.Tasks)+i+1)
 
 			tasks.Tasks[i].StoryID = story.ID
 
