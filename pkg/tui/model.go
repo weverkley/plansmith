@@ -7,12 +7,35 @@ import (
 	"plansmith/pkg/state"
 	"plansmith/pkg/trello"
 
+	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/viper"
 )
+
+type ConversationContext int
+
+const (
+	ContextNone ConversationContext = iota
+	ContextWaitingForNewOrExisting
+	ContextWaitingForFilePath
+	ContextWaitingForExistingFilePath
+	ContextWaitingForPlanConfirmation
+	ContextWaitingForBoardName
+	ContextWaitingForVisionConfirmation
+	ContextWaitingForStoriesConfirmation
+	ContextWaitingForBoardCreationConfirmation
+)
+
+type item struct {
+	title, desc string
+}
+
+func (i item) Title() string       { return i.title }
+func (i item) Description() string { return i.desc }
+func (i item) FilterValue() string { return i.title }
 
 type initializationMsg struct{}
 
@@ -30,6 +53,7 @@ type Model struct {
 	err                 error
 	generatingMsg       string
 	markdownPath        string
+	confirmationList    list.Model
 
 	// AI and services
 	agent        *smith.Agent
@@ -126,6 +150,15 @@ func NewModel() Model {
 	agent := smith.NewAgent(executor)
 	logging.Debug("Smith Agent initialized.")
 
+		// Initialize confirmation list
+	confirmationList := list.New([]list.Item{}, list.NewDefaultDelegate(), 0, 0)
+	confirmationList.SetShowTitle(false)
+	confirmationList.SetShowHelp(false)
+	confirmationList.SetFilteringEnabled(false)
+	confirmationList.SetHeight(2)
+	confirmationList.SetWidth(10)
+	logging.Debug("Confirmation list initialized.")
+
 	return Model{
 		conversationContext: ContextWaitingForNewOrExisting,
 		textInput:           ti,
@@ -140,6 +173,7 @@ func NewModel() Model {
 		plan:                &state.Plan{},
 		aiProvider:          aiProvider,
 		aiModel:             aiModel,
+		confirmationList:    confirmationList,
 	}
 }
 

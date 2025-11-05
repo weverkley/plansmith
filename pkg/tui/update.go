@@ -6,6 +6,8 @@ import (
 	"path/filepath" // Added import
 	"strings"
 
+	"github.com/charmbracelet/bubbles/list"
+
 	"github.com/charmbracelet/bubbles/cursor"
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
@@ -63,7 +65,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.chat.AddMessage("system", "Plansmith is here!")
 		m.chat.AddMessage("system", "Like a blacksmith, but for crafting project plans. PlanSmith is an interactive, chat-like terminal application that 'crafts' raw project ideas (from Markdown) into fully-formed, actionable Kanban boards (in Trello), with human review at every step.")
 		m.chat.AddMessage("system", "Version: v1.0")
-		m.chat.AddMessage("system", "Would you like to start a new project or open an existing one? (new/existing)")
+		m.chat.AddMessage("system", "Would you like to start a new project or open an existing one?")
+
+		items := []list.Item{
+			item{title: "new", desc: "Start a new project"},
+			item{title: "existing", desc: "Open an existing project"},
+		}
+		m.confirmationList.SetItems(items)
 		m.conversationContext = ContextWaitingForNewOrExisting
 		return m, nil
 
@@ -90,7 +98,88 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.chat.viewport.Height = m.height - otherComponentsHeight
 
 	case tea.KeyMsg:
-		logging.Debug("KeyMsg received: %s", msg.String())
+		logging.Debug("KeyMsg received: %s, Context: %v", msg.String(), m.conversationContext)
+
+
+		if m.conversationContext == ContextWaitingForNewOrExisting ||
+			m.conversationContext == ContextWaitingForVisionConfirmation ||
+			m.conversationContext == ContextWaitingForStoriesConfirmation ||
+			m.conversationContext == ContextWaitingForBoardCreationConfirmation {
+			
+			var listCmd tea.Cmd
+			m.confirmationList, listCmd = m.confirmationList.Update(msg)
+			cmds = append(cmds, listCmd)
+
+			switch msg.String() {
+			case "enter":
+				selectedItem := m.confirmationList.SelectedItem().(item)
+				input := selectedItem.title
+				m.chat.AddMessage("user", input)
+				m.textInput.Focus()
+				
+				switch m.conversationContext {
+				case ContextWaitingForNewOrExisting:
+					if input == "new" {
+						m.chat.AddMessage("assistant", "Great! Please provide the path to your project's markdown file.")
+						m.conversationContext = ContextWaitingForFilePath
+						logging.Info("Conversation context changed to ContextWaitingForFilePath")
+					} else if input == "existing" {
+						m.chat.AddMessage("assistant", "Great! Please provide the path to your project's .json file.")
+						m.conversationContext = ContextWaitingForExistingFilePath
+						logging.Info("Conversation context changed to ContextWaitingForExistingFilePath")
+					}
+				case ContextWaitingForVisionConfirmation:
+					if input == "yes" {
+						m.chat.AddMessage("assistant", "Generating stories...")
+						m.chat.SetLoading(true)
+						cmds = append(cmds, m.generateStoriesCmd())
+						m.conversationContext = ContextNone // Reset context after starting generation
+						logging.Info("Vision confirmed, starting story generation.")
+					} else if input == "no" {
+						m.chat.AddMessage("assistant", "Vision discarded. Please provide a new markdown file to start over.")
+						m.conversationContext = ContextWaitingForFilePath // Allow user to provide a new file
+						logging.Info("Vision discarded by user.")
+					}
+				case ContextWaitingForStoriesConfirmation:
+					if input == "yes" {
+						m.chat.AddMessage("assistant", "Generating tasks...")
+						m.chat.SetLoading(true)
+						cmds = append(cmds, m.generateTasksCmd())
+						m.conversationContext = ContextNone // Reset context after starting generation
+						logging.Info("Stories confirmed, starting task generation.")
+					} else if input == "no" {
+						m.chat.AddMessage("assistant", "Stories discarded. Please provide a new markdown file to start over.")
+						m.conversationContext = ContextWaitingForFilePath // Allow user to provide a new file
+						logging.Info("Stories discarded by user.")
+					}
+				case ContextWaitingForBoardCreationConfirmation:
+					if input == "yes" {
+						m.chat.AddMessage("assistant", fmt.Sprintf("Great! I'll proceed with creating the Trello board named '%s'.", m.plan.ProjectName))
+						m.chat.SetLoading(true)
+						cmds = append(cmds, m.createTrelloBoard(m.plan.ProjectName))
+						m.conversationContext = ContextNone // Reset context after starting creation
+						logging.Info("Board creation confirmed, starting Trello board creation.")
+					} else if input == "no" {
+						m.chat.AddMessage("assistant", "Trello board creation cancelled. What would you like to do next?")
+						m.conversationContext = ContextNone // Or a new context for project dashboard
+						logging.Info("Trello board creation cancelled by user.")
+					}
+				case ContextWaitingForPlanConfirmation:
+					if input == "yes" {
+						m.chat.AddMessage("assistant", "Great! What would you like to name the Trello board?")
+						m.chat.AddMessage("assistant", fmt.Sprintf("I'll suggest a name for you: %s", m.plan.ProjectName))
+						m.conversationContext = ContextWaitingForBoardName
+						logging.Info("Plan confirmed, waiting for Trello board name.")
+					} else if input == "no" {
+						m.chat.AddMessage("assistant", "Okay, the plan has been discarded. What would you like to do next?")
+						m.conversationContext = ContextNone
+						logging.Info("Plan discarded by user.")
+					}
+				}
+				return m, tea.Batch(cmds...)
+			}
+		}
+
 		if m.filePicker.visible {
 			m.filePicker, cmd = m.filePicker.Update(msg)
 			return m, cmd
@@ -217,30 +306,28 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.conversationContext = ContextNone
 					logging.Info("Markdown path set to %s, starting plan generation.", input)
 				case ContextWaitingForPlanConfirmation:
-					if strings.ToLower(input) == "yes" {
-						m.chat.AddMessage("assistant", "Great! What would you like to name the Trello board?")
-						m.chat.AddMessage("assistant", fmt.Sprintf("I'll suggest a name for you: %s", m.plan.ProjectName))
-						m.conversationContext = ContextWaitingForBoardName
-						logging.Info("Plan confirmed, waiting for Trello board name.")
-					} else if strings.ToLower(input) == "no" {
-						m.chat.AddMessage("assistant", "Okay, the plan has been discarded. What would you like to do next?")
-						m.conversationContext = ContextNone
-						logging.Info("Plan discarded by user.")
-					} else {
-						m.chat.AddMessage("assistant", "Sorry, I didn't understand that. Please type 'yes' to confirm or 'no' to discard the plan.")
-						logging.Warn("Invalid input for plan confirmation: %s", input)
+					items := []list.Item{
+						item{title: "yes", desc: "Confirm the plan"},
+						item{title: "no", desc: "Discard the plan"},
 					}
+					m.confirmationList.SetItems(items)
+					m.textInput.Blur()
+					return m, nil
 				case ContextWaitingForBoardName:
 					boardName := input
 					if boardName == "" {
 						boardName = m.plan.ProjectName
 						logging.Info("Using default board name: %s", boardName)
 					}
-					m.chat.AddMessage("assistant", fmt.Sprintf("Great! I'll proceed with creating the Trello board named '%s'.", boardName))
-					m.chat.SetLoading(true)
-					cmds = append(cmds, m.createTrelloBoard(boardName))
-					m.conversationContext = ContextNone
-					logging.Info("Creating Trello board with name: %s", boardName)
+					m.plan.ProjectName = boardName // Update plan with confirmed board name
+					m.chat.AddMessage("assistant", fmt.Sprintf("You chose to name the Trello board '%s'. Do you want to create it now? (yes/no)", boardName))
+					items := []list.Item{
+						item{title: "yes", desc: "Create Trello board"},
+						item{title: "no", desc: "Cancel Trello board creation"},
+					}
+					m.confirmationList.SetItems(items)
+					m.conversationContext = ContextWaitingForBoardCreationConfirmation
+					return m, nil
 				default:
 					logging.Debug("No specific conversation context, processing as general chat/command.")
 					// Process as a command or general chat
@@ -296,11 +383,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			for _, epic := range msg.vision.Epics {
 				m.plan.Epics = append(m.plan.Epics, state.Epic{ID: epic.ID, Name: epic.Name})
 			}
-			m.chat.AddMessage("assistant", "Generating stories...")
-			m.chat.SetLoading(true)
-			cmds = append(cmds, m.generateStoriesCmd())
+			formattedPlan := formatPlan(m.plan)
+			m.chat.AddMessage("assistant", "Here's the generated vision:\n"+formattedPlan)
+			m.chat.AddMessage("assistant", "Do you want to proceed with generating stories based on this vision?")
+			
+			items := []list.Item{
+				item{title: "yes", desc: "Proceed with this vision"},
+				item{title: "no", desc: "Discard and restart vision generation"},
+			}
+			m.confirmationList.SetItems(items)
+			m.conversationContext = ContextWaitingForVisionConfirmation
 		}
-
 	case storiesForEpicGeneratedMsg:
 		if msg.err != nil {
 			m.chat.AddMessage("system", fmt.Sprintf("Error generating stories for epic: %v", msg.err))
@@ -308,9 +401,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if len(m.plan.Epics) > 0 {
 				cmds = append(cmds, m.generateStoriesCmd())
 			} else {
-				m.chat.AddMessage("assistant", "Generating tasks...")
-				m.chat.SetLoading(true)
-				cmds = append(cmds, m.generateTasksCmd())
+				formattedPlan := formatPlan(m.plan)
+				m.chat.AddMessage("assistant", "All stories generated! Here's the plan so far:\n"+formattedPlan)
+				m.chat.AddMessage("assistant", "Do you want to proceed with generating tasks based on these stories? (yes/no)")
+				items := []list.Item{
+					item{title: "yes", desc: "Proceed with these stories"},
+					item{title: "no", desc: "Discard and restart story generation"},
+				}
+				m.confirmationList.SetItems(items)
+				m.conversationContext = ContextWaitingForStoriesConfirmation
 			}
 		}
 
@@ -319,11 +418,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			m.chat.AddMessage("system", fmt.Sprintf("Error generating stories: %v", msg.err))
 		} else {
-			m.chat.AddMessage("assistant", "Generating tasks...")
-			m.chat.SetLoading(true)
-			cmds = append(cmds, m.generateTasksCmd())
+			formattedPlan := formatPlan(m.plan)
+			m.chat.AddMessage("assistant", "All stories generated! Here's the plan so far:\n"+formattedPlan)
+			m.chat.AddMessage("assistant", "Do you want to proceed with generating tasks based on these stories? (yes/no)")
+			items := []list.Item{
+				item{title: "yes", desc: "Proceed with these stories"},
+				item{title: "no", desc: "Discard and restart story generation"},
+			}
+			m.confirmationList.SetItems(items)
+			m.conversationContext = ContextWaitingForStoriesConfirmation
 		}
-
 	case tasksForStoryGeneratedMsg:
 		if msg.err != nil {
 			m.chat.AddMessage("system", fmt.Sprintf("Error generating tasks for story: %v", msg.err))
@@ -339,7 +443,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
-			case allTasksGeneratedMsg:
+	case allTasksGeneratedMsg:
 				m.chat.SetLoading(false)
 				if msg.err != nil {
 					m.chat.AddMessage("system", fmt.Sprintf("Error generating tasks: %v", msg.err))
@@ -353,8 +457,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.chat.AddMessage("system", fmt.Sprintf("Error writing plan to file: %v", err))
 					} else {
 						m.chat.AddMessage("assistant", fmt.Sprintf("I've saved the plan to '%s'.", planFileName))
-						m.chat.AddMessage("assistant", "Please review the plan and type 'yes' to approve or 'no' to discard.")
 					}
+					m.chat.AddMessage("assistant", "Please review the plan. Do you want to confirm it? (yes/no)")
+					items := []list.Item{
+						item{title: "yes", desc: "Confirm the plan"},
+						item{title: "no", desc: "Discard the plan"},
+					}
+					m.confirmationList.SetItems(items)
 					m.conversationContext = ContextWaitingForPlanConfirmation
 				}
 		case trelloMsg:
