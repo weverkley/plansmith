@@ -417,26 +417,49 @@ func (m *Model) generateStoriesCmd() tea.Cmd {
 }
 
 func (m *Model) generateTasksCmd() tea.Cmd {
+
 	return func() tea.Msg {
+
 		if len(m.plan.UserStories) == 0 {
+
 			return allTasksGeneratedMsg{tasks: m.plan.Tasks}
+
 		}
+
+
 
 		story := m.plan.UserStories[0]
+
 		m.plan.UserStories = m.plan.UserStories[1:]
 
+
+
 		m.chat.AddMessage("assistant", fmt.Sprintf("Generating tasks for story '%s'...", story.Title))
+
 		tasks, err := m.agent.GenerateTasks(story.Title, story.Story, story.ID)
+
 		if err != nil {
+
 			return tasksForStoryGeneratedMsg{err: fmt.Errorf("failed to generate tasks for story %s: %w", story.Title, err)}
+
 		}
+
 		for i := range tasks.Tasks {
+
 			tasks.Tasks[i].ID = smith.GenerateID("TASK", len(m.plan.Tasks) + i + 1)
-							tasks.Tasks[i].StoryID = story.ID
-							m.plan.Tasks = append(m.plan.Tasks, state.Task{ID: tasks.Tasks[i].ID, Title: tasks.Tasks[i].Title, Description: tasks.Tasks[i].Description, StoryID: tasks.Tasks[i].StoryID, Dependencies: tasks.Tasks[i].Dependencies, Labels: tasks.Tasks[i].Labels})
-					}
-			
-					return tasksForStoryGeneratedMsg{tasks: tasks}	}
+
+			tasks.Tasks[i].StoryID = story.ID
+
+			m.plan.Tasks = append(m.plan.Tasks, state.Task{ID: tasks.Tasks[i].ID, Title: tasks.Tasks[i].Title, Description: tasks.Tasks[i].Description, StoryID: tasks.Tasks[i].StoryID, Dependencies: tasks.Tasks[i].Dependencies, Labels: tasks.Tasks[i].Labels})
+
+		}
+
+
+
+		return tasksForStoryGeneratedMsg{tasks: tasks}
+
+	}
+
 }
 func (m Model) createTrelloBoard(boardName string) tea.Cmd {
 	return func() tea.Msg {

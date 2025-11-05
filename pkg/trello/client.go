@@ -43,7 +43,7 @@ func (c *Client) CreateProjectBoard(name string) (*trello.Board, error) {
 	}
 
 	// Create default lists
-	listNames := []string{"Epics", "User Stories (Backlog)", "To Do (Ready)", "Doing", "Done"}
+	listNames := []string{"Epics", "User Stories (Backlog)", "To Do (Ready)", "Doing", "Review", "Done"}
 	for _, listName := range listNames {
 		// Use the client to create the list with the correct API
 		_, err := c.client.CreateList(&board, listName, trello.Defaults())
@@ -100,8 +100,10 @@ func (c *Client) PopulateBoard(boardID string, plan *Plan) error {
 
 	// Create/get Epic labels
 	epicLabels := make(map[string]*trello.Label)
-	for _, epic := range plan.Epics {
-		label, err := getOrCreateLabel(epic.Name, "sky") // Assign a color, e.g., "sky"
+	epicColors := []string{"sky", "lime", "pink", "black", "blue", "green", "orange", "purple", "red", "yellow"}
+	for i, epic := range plan.Epics {
+		color := epicColors[i%len(epicColors)] // Cycle through colors
+		label, err := getOrCreateLabel(epic.Name, color)
 		if err != nil {
 			return err
 		}
@@ -169,13 +171,44 @@ func (c *Client) PopulateBoard(boardID string, plan *Plan) error {
 		}
 		err := c.client.CreateCard(card, trello.Defaults())
 		if err != nil {
-			return fmt.Errorf("failed to create story card: %w", err)
-		}
-	}
-
-	// Add tasks to "To Do (Ready)" list
-	tasksList := listMap["To Do (Ready)"]
-	for _, task := range plan.Tasks {
+						            			return fmt.Errorf("failed to create story card: %w", err)
+						            		}
+						            
+						            		// Add Definition of Done checklist
+						            		dodItems := []string{
+						            			"Code implemented and reviewed",
+						            			"Unit tests passed",
+						            			"Acceptance criteria met",
+						            			"Documentation updated",
+						            			"Deployed to staging/QA environment",
+						            		}
+						            
+						            		// Create checklist using direct API call
+						            		checklistArgs := trello.Arguments{
+						            			"name": "Definition of Done",
+						            		}
+						            		var newChecklist trello.Checklist
+						            		err = c.client.Post(fmt.Sprintf("/1/cards/%s/checklists", card.ID), checklistArgs, &newChecklist)
+						            		if err != nil {
+						            			return fmt.Errorf("failed to create DoD checklist via API: %w", err)
+						            		}
+						            
+						            		// Add items to the checklist
+						            		for _, item := range dodItems {
+						            			checkItemArgs := trello.Arguments{
+						            				"name": item,
+						            				"pos":  "bottom",
+						            			}
+						            			err = c.client.Post(fmt.Sprintf("/1/checklists/%s/checkItems", newChecklist.ID), checkItemArgs, nil)
+						            			if err != nil {
+						            				return fmt.Errorf("failed to add item to DoD checklist via API: %w", err)
+						            			}
+						            		}
+						            	}
+						            
+						            	// Add tasks to "To Do (Ready)" list
+						            	tasksList := listMap["To Do (Ready)"]
+						            	for _, task := range plan.Tasks {
 		card := &trello.Card{
 			Name:   task.Title,
 			Desc:   task.Description,
@@ -186,8 +219,8 @@ func (c *Client) PopulateBoard(boardID string, plan *Plan) error {
 			if label, ok := labelMap[labelName]; ok { // Check if label already exists or was created
 				card.IDLabels = append(card.IDLabels, label.ID)
 			} else {
-				// If label doesn't exist, create it with a default color (e.g., "purple")
-				newLabel, err := getOrCreateLabel(labelName, "purple")
+				// If label doesn't exist, create it with a default color (e.g., "grey")
+				newLabel, err := getOrCreateLabel(labelName, "grey")
 				if err != nil {
 					return err
 				}
