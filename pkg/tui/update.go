@@ -104,7 +104,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.conversationContext == ContextWaitingForNewOrExisting ||
 			m.conversationContext == ContextWaitingForVisionConfirmation ||
 			m.conversationContext == ContextWaitingForStoriesConfirmation ||
-			m.conversationContext == ContextWaitingForBoardCreationConfirmation {
+			m.conversationContext == ContextWaitingForBoardCreationConfirmation ||
+			m.conversationContext == ContextWaitingForPlanConfirmation {
 			
 			var listCmd tea.Cmd
 			m.confirmationList, listCmd = m.confirmationList.Update(msg)
@@ -305,14 +306,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					cmds = append(cmds, m.generateVisionCmd())
 					m.conversationContext = ContextNone
 					logging.Info("Markdown path set to %s, starting plan generation.", input)
-				case ContextWaitingForPlanConfirmation:
-					items := []list.Item{
-						item{title: "yes", desc: "Confirm the plan"},
-						item{title: "no", desc: "Discard the plan"},
-					}
-					m.confirmationList.SetItems(items)
-					m.textInput.Blur()
-					return m, nil
 				case ContextWaitingForBoardName:
 					boardName := input
 					if boardName == "" {
@@ -449,14 +442,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.chat.AddMessage("system", fmt.Sprintf("Error generating tasks: %v", msg.err))
 				} else {
 					m.chat.AddMessage("assistant", "Plan generated successfully!")
-					// Write the plan to a file
-					planFileName := fmt.Sprintf("%s_plan.txt", m.plan.ProjectName)
-					formattedPlan := formatPlan(m.plan)
-					err := os.WriteFile(planFileName, []byte(formattedPlan), 0644)
+					// Save the plan to a file
+					err := m.stateManager.SavePlan(m.plan)
 					if err != nil {
 						m.chat.AddMessage("system", fmt.Sprintf("Error writing plan to file: %v", err))
 					} else {
-						m.chat.AddMessage("assistant", fmt.Sprintf("I've saved the plan to '%s'.", planFileName))
+						m.chat.AddMessage("assistant", fmt.Sprintf("I've saved the plan to '.plansmith/plan.json'."))
 					}
 					m.chat.AddMessage("assistant", "Please review the plan. Do you want to confirm it? (yes/no)")
 					items := []list.Item{
