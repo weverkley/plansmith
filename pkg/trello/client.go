@@ -2,6 +2,7 @@ package trello
 
 import (
 	"fmt"
+	"plansmith/pkg/logging"
 
 	"github.com/adlio/trello"
 )
@@ -43,8 +44,9 @@ func (c *Client) CreateProjectBoard(name string) (*trello.Board, error) {
 	}
 
 	// Create default lists
-	listNames := []string{"Epics", "User Stories (Backlog)", "To Do (Ready)", "Doing", "Review", "Done"}
-	for _, listName := range listNames {
+	listNames := []string{"Done", "Review", "Doing", "To Do (Ready)", "User Stories (Backlog)", "Epics"}
+	for i := len(listNames) - 1; i >= 0; i-- {
+		listName := listNames[i]
 		// Use the client to create the list with the correct API
 		_, err := c.client.CreateList(&board, listName, trello.Defaults())
 		if err != nil {
@@ -84,6 +86,7 @@ func (c *Client) CreateChecklist(cardID, name string, items []string) (*Checklis
 }
 
 func (c *Client) PopulateBoard(boardID string, plan *Plan) error {
+	logging.Info("Populating board %s with %d epics, %d stories, and %d tasks", boardID, len(plan.Epics), len(plan.UserStories), len(plan.Tasks))
 	board, err := c.client.GetBoard(boardID, trello.Defaults())
 	if err != nil {
 		return fmt.Errorf("failed to get board: %w", err)
@@ -159,7 +162,9 @@ func (c *Client) PopulateBoard(boardID string, plan *Plan) error {
 
 	// Add epics to "Epics" list
 	epicsList := listMap["Epics"]
+	logging.Info("Creating %d epic cards in list '%s'", len(plan.Epics), epicsList.Name)
 	for _, epic := range plan.Epics {
+		logging.Info("Creating epic card: %s", epic.Name)
 		card := &trello.Card{
 			Name:   epic.Name,
 			Desc:   plan.ProductVision,
@@ -176,7 +181,9 @@ func (c *Client) PopulateBoard(boardID string, plan *Plan) error {
 
 	// Add user stories to "User Stories (Backlog)" list
 	storiesList := listMap["User Stories (Backlog)"]
+	logging.Info("Creating %d user story cards in list '%s'", len(plan.UserStories), storiesList.Name)
 	for _, story := range plan.UserStories {
+		logging.Info("Creating user story card: %s", story.Title)
 		card := &trello.Card{
 			Name:   story.Title,
 			Desc:   story.Story,
@@ -218,8 +225,10 @@ func (c *Client) PopulateBoard(boardID string, plan *Plan) error {
 	}
 
 	// Add tasks to "To Do (Ready)" list
-						            	tasksList := listMap["To Do (Ready)"]
-						            	for _, task := range plan.Tasks {
+	tasksList := listMap["To Do (Ready)"]
+	logging.Info("Creating %d task cards in list '%s'", len(plan.Tasks), tasksList.Name)
+	for _, task := range plan.Tasks {
+		logging.Info("Creating task card: %s", task.Title)
 		card := &trello.Card{
 			Name:   task.Title,
 			Desc:   task.Description,
