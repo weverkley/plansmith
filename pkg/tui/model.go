@@ -131,18 +131,19 @@ func NewModel(dummy bool) Model {
 				logging.Warn("No API key found for provider: %s", aiProvider)
 			}
 
-			// Trello configuration
-			key := viper.GetString("trello.key")
-			token := viper.GetString("trello.token")
-			if key != "" && token != "" {
-				trelloClient = trello.NewClient(key, token)
-				logging.Info("Successfully created Trello client")
-			} else {
-				logging.Warn("Trello key or token not found in config")
-			}
 		} else {
 			logging.Warn("Failed to load configuration file: %v", err)
 		}
+	}
+
+	// Trello configuration
+	key := viper.GetString("trello.key")
+	token := viper.GetString("trello.token")
+	if key != "" && token != "" {
+		trelloClient = trello.NewClient(key, token)
+		logging.Info("Successfully created Trello client")
+	} else {
+		logging.Warn("Trello key or token not found in config")
 	}
 
 	// If we can't load config or create executor, create a dummy one
