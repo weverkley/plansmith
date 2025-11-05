@@ -55,6 +55,34 @@ func (c *Client) CreateProjectBoard(name string) (*trello.Board, error) {
 	return &board, nil
 }
 
+func (c *Client) CreateChecklist(cardID, name string, items []string) (*Checklist, error) {
+	checklist := &Checklist{
+		Name:   name,
+		IDCard: cardID,
+	}
+
+	path := fmt.Sprintf("cards/%s/checklists", cardID)
+	err := c.client.Post(path, trello.Arguments{"name": name}, checklist)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create checklist: %w", err)
+	}
+
+	for _, item := range items {
+		checkItem := &CheckItem{
+			Name:        item,
+			IDChecklist: checklist.ID,
+		}
+		path := fmt.Sprintf("checklists/%s/checkItems", checklist.ID)
+		err := c.client.Post(path, trello.Arguments{"name": item}, checkItem)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create check item: %w", err)
+		}
+		checklist.CheckItems = append(checklist.CheckItems, checkItem)
+	}
+
+	return checklist, nil
+}
+
 func (c *Client) PopulateBoard(boardID string, plan *Plan) error {
 	board, err := c.client.GetBoard(boardID, trello.Defaults())
 	if err != nil {
@@ -171,42 +199,25 @@ func (c *Client) PopulateBoard(boardID string, plan *Plan) error {
 		}
 		err := c.client.CreateCard(card, trello.Defaults())
 		if err != nil {
-						            			return fmt.Errorf("failed to create story card: %w", err)
-						            		}
-						            
-						            		// Add Definition of Done checklist
-						            		dodItems := []string{
-						            			"Code implemented and reviewed",
-						            			"Unit tests passed",
-						            			"Acceptance criteria met",
-						            			"Documentation updated",
-						            			"Deployed to staging/QA environment",
-						            		}
-						            
-						            		// Create checklist using direct API call
-						            		checklistArgs := trello.Arguments{
-						            			"name": "Definition of Done",
-						            		}
-						            		var newChecklist trello.Checklist
-						            		err = c.client.Post(fmt.Sprintf("/1/cards/%s/checklists", card.ID), checklistArgs, &newChecklist)
-						            		if err != nil {
-						            			return fmt.Errorf("failed to create DoD checklist via API: %w", err)
-						            		}
-						            
-						            		// Add items to the checklist
-						            		for _, item := range dodItems {
-						            			checkItemArgs := trello.Arguments{
-						            				"name": item,
-						            				"pos":  "bottom",
-						            			}
-						            			err = c.client.Post(fmt.Sprintf("/1/checklists/%s/checkItems", newChecklist.ID), checkItemArgs, nil)
-						            			if err != nil {
-						            				return fmt.Errorf("failed to add item to DoD checklist via API: %w", err)
-						            			}
-						            		}
-						            	}
-						            
-						            	// Add tasks to "To Do (Ready)" list
+			return fmt.Errorf("failed to create story card: %w", err)
+		}
+
+		// Add Definition of Done checklist
+		dodItems := []string{
+			"Code implemented and reviewed",
+			"Unit tests passed",
+			"Acceptance criteria met",
+			"Documentation updated",
+			"Deployed to staging/QA environment",
+		}
+
+		_, err = c.CreateChecklist(card.ID, "Definition of Done", dodItems)
+		if err != nil {
+			return fmt.Errorf("failed to create DoD checklist: %w", err)
+		}
+	}
+
+	// Add tasks to "To Do (Ready)" list
 						            	tasksList := listMap["To Do (Ready)"]
 						            	for _, task := range plan.Tasks {
 		card := &trello.Card{
@@ -219,8 +230,8 @@ func (c *Client) PopulateBoard(boardID string, plan *Plan) error {
 			if label, ok := labelMap[labelName]; ok { // Check if label already exists or was created
 				card.IDLabels = append(card.IDLabels, label.ID)
 			} else {
-				// If label doesn't exist, create it with a default color (e.g., "grey")
-				newLabel, err := getOrCreateLabel(labelName, "grey")
+				// If label doesn't exist, create it with a default color (e.g., "blue")
+				newLabel, err := getOrCreateLabel(labelName, "blue")
 				if err != nil {
 					return err
 				}
@@ -264,8 +275,43 @@ func (c *Client) PopulateBoard(boardID string, plan *Plan) error {
 }
 
 func (c *Client) LinkCards(boardID string, plan *Plan) error {
-	// This would implement linking cards based on dependencies
-	// Implementation would involve finding cards and creating attachments/links
-	// between them based on the task dependencies
+	board, err := c.client.GetBoard(boardID, trello.Defaults())
+	if err != nil {
+		return fmt.Errorf("failed to get board: %w", err)
+	}
+
+	cards, err := board.GetCards(trello.Defaults())
+	if err != nil {
+		return fmt.Errorf("failed to get cards: %w", err)
+	}
+
+	cardMap := make(map[string]*trello.Card)
+	for _, card := range cards {
+		cardMap[card.Name] = card
+	}
+
+	for _, task := range plan.Tasks {
+		if len(task.Dependencies) > 0 {
+			taskCard := cardMap[task.Title]
+			if taskCard == nil {
+				continue
+			}
+
+			for _, depTitle := range task.Dependencies {
+				depCard := cardMap[depTitle]
+				if depCard != nil {
+					attachment := &trello.Attachment{
+						Name: depCard.Name,
+						URL:  depCard.ShortURL,
+					}
+					err := taskCard.AddURLAttachment(attachment)
+					if err != nil {
+						return fmt.Errorf("failed to add attachment to card: %w", err)
+					}
+				}
+			}
+		}
+	}
+
 	return nil
 }

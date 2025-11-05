@@ -63,7 +63,7 @@ type Model struct {
 	aiModel      string
 }
 
-func NewModel() Model {
+func NewModel(dummy bool) Model {
 	logging.Info("Creating new TUI model")
 
 	ti := textinput.New()
@@ -97,54 +97,58 @@ func NewModel() Model {
 	aiProvider := "gemini"
 	aiModel := ""
 
-	if err := viper.ReadInConfig(); err == nil {
-		logging.Info("Successfully loaded configuration file")
+	if dummy {
+		executor = &ai.DummyExecutor{}
+	} else {
+		if err := viper.ReadInConfig(); err == nil {
+			logging.Info("Successfully loaded configuration file")
 
-		// AI configuration
-		aiProvider = viper.GetString("ai.default_provider")
-		var apiKey string
-		if aiProvider == "gemini" {
-			apiKey = viper.GetString("ai.keys.gemini")
-			aiModel = viper.GetString("ai.models.gemini")
-		} else if aiProvider == "openai" {
-			apiKey = viper.GetString("ai.keys.openai")
-			aiModel = viper.GetString("ai.models.openai")
-		} else if aiProvider == "qwen" {
-			apiKey = viper.GetString("ai.keys.qwen")
-			aiModel = viper.GetString("ai.models.qwen")
-		}
+			// AI configuration
+			aiProvider = viper.GetString("ai.default_provider")
+			var apiKey string
+			if aiProvider == "gemini" {
+				apiKey = viper.GetString("ai.keys.gemini")
+				aiModel = viper.GetString("ai.models.gemini")
+			} else if aiProvider == "openai" {
+				apiKey = viper.GetString("ai.keys.openai")
+				aiModel = viper.GetString("ai.models.openai")
+			} else if aiProvider == "qwen" {
+				apiKey = viper.GetString("ai.keys.qwen")
+				aiModel = viper.GetString("ai.models.qwen")
+			}
 
-		logging.Info("AI provider: %s, Model: %s", aiProvider, aiModel)
+			logging.Info("AI provider: %s, Model: %s", aiProvider, aiModel)
 
-		if apiKey != "" {
-			var err error
-			executor, err = ai.NewExecutor(aiProvider, apiKey, aiModel)
-			if err != nil {
-				logging.Error("Failed to create AI executor: %v", err)
+			if apiKey != "" {
+				var err error
+				executor, err = ai.NewExecutor(aiProvider, apiKey, aiModel)
+				if err != nil {
+					logging.Error("Failed to create AI executor: %v", err)
+				} else {
+					logging.Info("Successfully created AI executor")
+				}
 			} else {
-				logging.Info("Successfully created AI executor")
+				logging.Warn("No API key found for provider: %s", aiProvider)
+			}
+
+			// Trello configuration
+			key := viper.GetString("trello.key")
+			token := viper.GetString("trello.token")
+			if key != "" && token != "" {
+				trelloClient = trello.NewClient(key, token)
+				logging.Info("Successfully created Trello client")
+			} else {
+				logging.Warn("Trello key or token not found in config")
 			}
 		} else {
-			logging.Warn("No API key found for provider: %s", aiProvider)
+			logging.Warn("Failed to load configuration file: %v", err)
 		}
-
-		// Trello configuration
-		key := viper.GetString("trello.key")
-		token := viper.GetString("trello.token")
-		if key != "" && token != "" {
-			trelloClient = trello.NewClient(key, token)
-			logging.Info("Successfully created Trello client")
-		} else {
-			logging.Warn("Trello key or token not found in config")
-		}
-	} else {
-		logging.Warn("Failed to load configuration file: %v", err)
 	}
 
 	// If we can't load config or create executor, create a dummy one
 	if executor == nil {
 		logging.Info("Using dummy executor")
-		executor = &dummyExecutor{}
+		executor = &ai.DummyExecutor{}
 	}
 
 	agent := smith.NewAgent(executor)
@@ -185,18 +189,6 @@ func (m Model) Init() tea.Cmd {
 			return initializationMsg{}
 		},
 	)
-}
-
-// Dummy executor for when we can't load config
-type dummyExecutor struct{}
-
-func (d *dummyExecutor) ExecutePrompt(prompt string) (string, error) {
-	logging.Info("Using dummy executor to execute prompt")
-	return `{
-		"project_name": "Sample Project",
-		"product_vision": "A sample vision",
-		"epics": ["User Management", "Content Management"]
-	}`, nil
 }
 
 // GetChatMessages returns the current chat messages.

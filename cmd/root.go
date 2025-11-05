@@ -23,6 +23,8 @@ var cfgFile string
 var logLevel string
 var plansmithDir string // Global variable to store the resolved .plansmith directory
 
+var dummy bool
+
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
 	Use:   "plansmith",
@@ -44,7 +46,7 @@ with human review at every step.`,
 
 		logging.Info("Starting PlanSmith application")
 		if len(args) == 0 {
-			StartTUI()
+			StartTUI(dummy)
 		} else {
 			runNonInteractive(args)
 		}
@@ -65,6 +67,7 @@ func init() {
 	// Cobra flags can be global and persistent across subcommands.
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.plansmith/config.yaml)")
 	rootCmd.PersistentFlags().StringVarP(&logLevel, "log-level", "l", "info", "Set the logging level (debug, info, warn, error)")
+	rootCmd.PersistentFlags().BoolVar(&dummy, "dummy", false, "Use a dummy AI executor for testing")
 	viper.BindPFlag("log_level", rootCmd.PersistentFlags().Lookup("log-level"))
 }
 
@@ -117,10 +120,10 @@ func initConfig() {
 	}
 }
 
-func StartTUI() {
+func StartTUI(dummy bool) {
 	logging.Info("Initializing TUI")
 
-	model := tui.NewModel()
+	model := tui.NewModel(dummy)
 
 	logging.Info("Starting bubbletea program")
 	p := tea.NewProgram(model)
@@ -182,24 +185,28 @@ func runNonInteractive(args []string) {
 
 	// Initialize AI executor
 	var executor ai.AIExecutor
-	aiProvider := viper.GetString("ai.default_provider")
-	var apiKey string
-	if aiProvider == "gemini" {
-		apiKey = viper.GetString("ai.keys.gemini")
-	} else if aiProvider == "openai" {
-		apiKey = viper.GetString("ai.keys.openai")
-	} else if aiProvider == "qwen" {
-		apiKey = viper.GetString("ai.keys.qwen")
-	}
-
-	if apiKey != "" {
-		var err error
-		executor, err = ai.NewExecutor(aiProvider, apiKey, "")
-		if err != nil {
-			log.Fatalf("Failed to create AI executor: %v", err)
-		}
+	if dummy {
+		executor = &ai.DummyExecutor{}
 	} else {
-		log.Fatalf("No API key found for provider: %s", aiProvider)
+		aiProvider := viper.GetString("ai.default_provider")
+		var apiKey string
+		if aiProvider == "gemini" {
+			apiKey = viper.GetString("ai.keys.gemini")
+		} else if aiProvider == "openai" {
+			apiKey = viper.GetString("ai.keys.openai")
+		} else if aiProvider == "qwen" {
+			apiKey = viper.GetString("ai.keys.qwen")
+		}
+
+		if apiKey != "" {
+			var err error
+			executor, err = ai.NewExecutor(aiProvider, apiKey, "")
+			if err != nil {
+				log.Fatalf("Failed to create AI executor: %v", err)
+			}
+		} else {
+			log.Fatalf("No API key found for provider: %s", aiProvider)
+		}
 	}
 
 	// Read markdown file
@@ -222,27 +229,30 @@ func runNonInteractive(args []string) {
 		ProductVision: vision.ProductVision,
 	}
 
-	for _, epic := range vision.Epics {
-		plan.Epics = append(plan.Epics, state.Epic{ID: epic.ID, Name: epic.Name})
+	for i, epic := range vision.Epics {
+		plan.Epics = append(plan.Epics, state.Epic{ID: smith.GenerateID("EPIC", i+1), Name: epic.Name})
 	}
 
+	storyCounter := 0
+	taskCounter := 0
 	for _, epic := range plan.Epics {
 		stories, err := agent.GenerateStories(plan.ProductVision, epic.Name, epic.ID)
 		if err != nil {
 			log.Fatalf("Failed to generate stories for epic %s: %v", epic.Name, err)
 		}
 		for _, story := range stories.UserStories {
-			plan.UserStories = append(plan.UserStories, state.UserStory{ID: story.ID, Title: story.Title, Story: story.Story, Priority: story.Priority, EpicID: story.EpicID})
-		}
-	}
+			storyID := smith.GenerateID("STORY", storyCounter+1)
+			plan.UserStories = append(plan.UserStories, state.UserStory{ID: storyID, Title: story.Title, Story: story.Story, Priority: story.Priority, EpicID: epic.ID})
+			storyCounter++
 
-	for _, story := range plan.UserStories {
-		tasks, err := agent.GenerateTasks(story.Title, story.Story, story.ID)
-		if err != nil {
-			log.Fatalf("Failed to generate tasks for story %s: %v", story.Title, err)
-		}
-		for _, task := range tasks.Tasks {
-			plan.Tasks = append(plan.Tasks, state.Task{ID: task.ID, Title: task.Title, Description: task.Description, StoryID: task.StoryID, Dependencies: task.Dependencies, Labels: task.Labels})
+			tasks, err := agent.GenerateTasks(story.Title, story.Story, storyID)
+			if err != nil {
+				log.Fatalf("Failed to generate tasks for story %s: %v", story.Title, err)
+			}
+			for _, task := range tasks.Tasks {
+				plan.Tasks = append(plan.Tasks, state.Task{ID: smith.GenerateID("TASK", taskCounter+1), Title: task.Title, Description: task.Description, StoryID: storyID, Dependencies: task.Dependencies, Labels: task.Labels})
+				taskCounter++
+			}
 		}
 	}
 
@@ -292,6 +302,13 @@ func runNonInteractive(args []string) {
 	err = trelloClient.LinkCards(trelloBoard.ID, trelloPlan)
 	if err != nil {
 		log.Fatalf("Failed to link cards on Trello board: %v", err)
+	}
+
+	// Save the plan
+	stateManager := state.NewManager()
+	err = stateManager.SavePlan(plan)
+	if err != nil {
+		log.Fatalf("Failed to save plan: %v", err)
 	}
 
 	fmt.Printf("Trello board created successfully: %s\n", trelloBoard.URL)
