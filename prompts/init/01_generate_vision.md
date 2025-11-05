@@ -13,7 +13,7 @@ You must strictly adhere to the following rules:
  "product_vision": "string",
  "epics": [
    {
-     "id": "integer",
+     "id": "string (e.g., [EPIC_1])",
      "name": "string"
    }
  ]

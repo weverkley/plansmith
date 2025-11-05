@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath" // Added import
-	"strconv"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/cursor"
@@ -386,7 +385,7 @@ func (m *Model) generateVisionCmd() tea.Cmd {
 		}
 
 		for i := range vision.Epics {
-			vision.Epics[i].ID = i + 1
+			vision.Epics[i].ID = smith.GenerateID("EPIC", i+1)
 		}
 
 		return visionGeneratedMsg{vision: vision}
@@ -403,12 +402,12 @@ func (m *Model) generateStoriesCmd() tea.Cmd {
 		m.plan.Epics = m.plan.Epics[1:]
 
 		m.chat.AddMessage("assistant", fmt.Sprintf("Generating stories for epic '%s'...", epic.Name))
-		stories, err := m.agent.GenerateStories(m.plan.ProductVision, epic.Name)
+		stories, err := m.agent.GenerateStories(m.plan.ProductVision, epic.Name, epic.ID)
 		if err != nil {
 			return storiesForEpicGeneratedMsg{err: fmt.Errorf("failed to generate stories for epic %s: %w", epic.Name, err)}
 		}
 		for i := range stories.UserStories {
-			stories.UserStories[i].ID = len(m.plan.UserStories) + i + 1
+			stories.UserStories[i].ID = smith.GenerateID("STORY", len(m.plan.UserStories) + i + 1)
 			stories.UserStories[i].EpicID = epic.ID
 			m.plan.UserStories = append(m.plan.UserStories, state.UserStory{ID: stories.UserStories[i].ID, Title: stories.UserStories[i].Title, Story: stories.UserStories[i].Story, Priority: stories.UserStories[i].Priority, EpicID: stories.UserStories[i].EpicID})
 		}
@@ -427,18 +426,17 @@ func (m *Model) generateTasksCmd() tea.Cmd {
 		m.plan.UserStories = m.plan.UserStories[1:]
 
 		m.chat.AddMessage("assistant", fmt.Sprintf("Generating tasks for story '%s'...", story.Title))
-		tasks, err := m.agent.GenerateTasks(story.Title, story.Story)
+		tasks, err := m.agent.GenerateTasks(story.Title, story.Story, story.ID)
 		if err != nil {
 			return tasksForStoryGeneratedMsg{err: fmt.Errorf("failed to generate tasks for story %s: %w", story.Title, err)}
 		}
 		for i := range tasks.Tasks {
-			tasks.Tasks[i].ID = len(m.plan.Tasks) + i + 1
-			tasks.Tasks[i].StoryID = story.ID
-			m.plan.Tasks = append(m.plan.Tasks, state.Task{ID: tasks.Tasks[i].ID, Title: tasks.Tasks[i].Title, Description: tasks.Tasks[i].Description, StoryID: tasks.Tasks[i].StoryID, Dependencies: tasks.Tasks[i].Dependencies})
-		}
-
-		return tasksForStoryGeneratedMsg{tasks: tasks}
-	}
+			tasks.Tasks[i].ID = smith.GenerateID("TASK", len(m.plan.Tasks) + i + 1)
+							tasks.Tasks[i].StoryID = story.ID
+							m.plan.Tasks = append(m.plan.Tasks, state.Task{ID: tasks.Tasks[i].ID, Title: tasks.Tasks[i].Title, Description: tasks.Tasks[i].Description, StoryID: tasks.Tasks[i].StoryID, Dependencies: tasks.Tasks[i].Dependencies, Labels: tasks.Tasks[i].Labels})
+					}
+			
+					return tasksForStoryGeneratedMsg{tasks: tasks}	}
 }
 func (m Model) createTrelloBoard(boardName string) tea.Cmd {
 	return func() tea.Msg {
@@ -469,12 +467,7 @@ func (m Model) createTrelloBoard(boardName string) tea.Cmd {
 		}
 
 		for _, task := range m.plan.Tasks {
-			// Convert dependencies from []int to []string
-			var deps []string
-			for _, depID := range task.Dependencies {
-				deps = append(deps, strconv.Itoa(depID))
-			}
-			trelloPlan.Tasks = append(trelloPlan.Tasks, trello.Task{ID: task.ID, Title: task.Title, Description: task.Description, StoryID: task.StoryID, Dependencies: deps})
+			trelloPlan.Tasks = append(trelloPlan.Tasks, trello.Task{ID: task.ID, Title: task.Title, Description: task.Description, StoryID: task.StoryID, Dependencies: task.Dependencies, Labels: task.Labels})
 		}
 
 		err = m.trelloClient.PopulateBoard(board.ID, trelloPlan)
@@ -497,15 +490,15 @@ func formatPlan(plan *state.Plan) string {
 	b.WriteString(fmt.Sprintf("Product Vision: %s\n", plan.ProductVision))
 	b.WriteString("Epics:\n")
 	for _, epic := range plan.Epics {
-		b.WriteString(fmt.Sprintf("- [%d] %s\n", epic.ID, epic.Name))
+		b.WriteString(fmt.Sprintf("- [%s] %s\n", epic.ID, epic.Name))
 	}
 	b.WriteString("User Stories:\n")
 	for _, story := range plan.UserStories {
-		b.WriteString(fmt.Sprintf("- [%d] %s (Epic: %d)\n", story.ID, story.Title, story.EpicID))
+		b.WriteString(fmt.Sprintf("- [%s] %s (Epic: %s)\n", story.ID, story.Title, story.EpicID))
 	}
 	b.WriteString("Tasks:\n")
 	for _, task := range plan.Tasks {
-		b.WriteString(fmt.Sprintf("- [%d] %s (Story: %d): %s\n", task.ID, task.Title, task.StoryID, task.Description))
+		b.WriteString(fmt.Sprintf("- [%s] %s (Story: %s): %s\n", task.ID, task.Title, task.StoryID, task.Description))
 	}
 	return b.String()
 }

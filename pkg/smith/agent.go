@@ -32,7 +32,7 @@ type VisionResponse struct {
 }
 
 type Epic struct {
-	ID   int    `json:"id"`
+	ID   string    `json:"id"`
 	Name string `json:"name"`
 }
 
@@ -65,6 +65,10 @@ func (a *Agent) GenerateVision(markdownInput string) (*VisionResponse, error) {
 		return nil, fmt.Errorf("failed to parse vision response: %w", err)
 	}
 
+	for i := range vision.Epics {
+		vision.Epics[i].ID = GenerateID("EPIC", i+1)
+	}
+
 	logging.Info("Successfully parsed vision response: project=%s, vision_length=%d, epics_count=%d",
 		vision.ProjectName, len(vision.ProductVision), len(vision.Epics))
 
@@ -76,19 +80,20 @@ type StoryResponse struct {
 }
 
 type UserStory struct {
-	ID       int    `json:"id"`
+	ID       string    `json:"id"`
 	Title    string `json:"title"`
 	Story    string `json:"story"`
 	Priority int    `json:"priority"`
-	EpicID   int    `json:"epic_id"`
+	EpicID   string    `json:"epic_id"`
 }
 
-func (a *Agent) GenerateStories(vision, epic string) (*StoryResponse, error) {
-	logging.Info("Generating stories for epic: %s", epic)
+func (a *Agent) GenerateStories(vision, epicName, epicID string) (*StoryResponse, error) {
+	logging.Info("Generating stories for epic: %s", epicName)
 
 	prompt, err := a.loader.LoadInitPrompt(2, map[string]interface{}{
 		"ProductVision": vision,
-		"Epic":          epic,
+		"EpicName":      epicName,
+		"EpicID":        epicID,
 	})
 	if err != nil {
 		logging.Error("Failed to load stories prompt: %v", err)
@@ -113,6 +118,11 @@ func (a *Agent) GenerateStories(vision, epic string) (*StoryResponse, error) {
 		return nil, fmt.Errorf("failed to parse stories response: %w", err)
 	}
 
+	for i := range stories.UserStories {
+		stories.UserStories[i].ID = GenerateID("STORY", i+1)
+		stories.UserStories[i].EpicID = epicID
+	}
+
 	logging.Info("Successfully parsed stories response: stories_count=%d", len(stories.UserStories))
 
 	return &stories, nil
@@ -123,19 +133,21 @@ type TaskResponse struct {
 }
 
 type Task struct {
-	ID           int   `json:"id"`
+	ID           string   `json:"id"`
 	Title        string `json:"title"`
 	Description  string `json:"description"`
-	StoryID      int   `json:"story_id"`
-	Dependencies []int  `json:"dependencies"`
+	StoryID      string   `json:"story_id"`
+	Dependencies []string  `json:"dependencies"`
+	Labels       []string `json:"labels"`
 }
 
-func (a *Agent) GenerateTasks(storyTitle, story string) (*TaskResponse, error) {
+func (a *Agent) GenerateTasks(storyTitle, story, storyID string) (*TaskResponse, error) {
 	logging.Info("Generating tasks for story: %s", storyTitle)
 
 	prompt, err := a.loader.LoadInitPrompt(3, map[string]interface{}{
 		"StoryTitle": storyTitle,
 		"UserStory":  story,
+		"StoryID":    storyID,
 	})
 	if err != nil {
 		logging.Error("Failed to load tasks prompt: %v", err)
@@ -160,6 +172,11 @@ func (a *Agent) GenerateTasks(storyTitle, story string) (*TaskResponse, error) {
 		return nil, fmt.Errorf("failed to parse tasks response: %w", err)
 	}
 
+	for i := range tasks.Tasks {
+		tasks.Tasks[i].ID = GenerateID("TASK", i+1)
+		tasks.Tasks[i].StoryID = storyID
+	}
+
 	logging.Info("Successfully parsed tasks response: tasks_count=%d", len(tasks.Tasks))
 
 	return &tasks, nil
@@ -169,11 +186,18 @@ type BundleResponse struct {
 	FeatureBundle []FeatureBundle `json:"feature_bundle"`
 }
 
+type BundleTask struct {
+	Title        string   `json:"title"`
+	Description  string   `json:"description"`
+	Dependencies []string `json:"dependencies"`
+	Labels       []string `json:"labels"`
+}
+
 type FeatureBundle struct {
-	Title    string `json:"title"`
-	Story    string `json:"story"`
-	Priority int    `json:"priority"`
-	Tasks    []Task `json:"tasks"`
+	Title    string       `json:"title"`
+	Story    string       `json:"story"`
+	Priority int          `json:"priority"`
+	Tasks    []BundleTask `json:"tasks"`
 }
 
 func (a *Agent) GenerateAddBundle(currentPlanJSON string, markdownInput string) (*BundleResponse, error) {

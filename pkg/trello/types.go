@@ -9,23 +9,23 @@ type Plan struct {
 }
 
 type Epic struct {
-	ID   int    `json:"id"`
+	ID   string    `json:"id"`
 	Name string `json:"name"`
 }
 
 type UserStory struct {
-	ID       int    `json:"id"`
+	ID       string    `json:"id"`
 	Title    string `json:"title"`
 	Story    string `json:"story"`
 	Priority int    `json:"priority"`
-	EpicID   int    `json:"epic_id"`
+	EpicID   string    `json:"epic_id"`
 }
 
 type Task struct {
-	ID           int      `json:"id"`
+	ID           string      `json:"id"`
 	Title        string   `json:"title"`
 	Description  string   `json:"description"`
-	StoryID      int      `json:"story_id"`
+	StoryID      string   `json:"story_id"`
 	Dependencies []string `json:"dependencies"`
-	Labels       []string `json:"labels"` // Added for Trello labels
+	Labels       []string `json:"labels"`
 }

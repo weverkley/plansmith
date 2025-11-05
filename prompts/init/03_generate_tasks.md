@@ -12,11 +12,11 @@ You must strictly adhere to the following rules:
 {
  "tasks": [
     {
-     "id": "integer",
+     "id": "string (e.g., [TASK_1])",
      "title": "string (The technical task)",
      "description": "string (A brief 1-sentence description of the task)",
-     "story_id": "integer",
-     "dependencies": ["integer", ...]
+     "story_id": "string (e.g., [STORY_1])",
+     "dependencies": ["string (e.g., [TASK_2])", ...]
    }
  ]
 }

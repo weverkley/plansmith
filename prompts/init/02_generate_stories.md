@@ -12,11 +12,11 @@ You must strictly adhere to the following rules:
 {
  "user_stories": [
    {
-     "id": "integer",
+     "id": "string (e.g., [STORY_1])",
      "title": "string (A short title for the story)",
      "story": "string (As a user, I want..., so that...)",
      "priority": "integer",
-     "epic_id": "integer"
+     "epic_id": "string (e.g., [EPIC_1])"
    }
  ]
 }
