@@ -504,7 +504,7 @@ func (m *Model) generateStoriesCmd() tea.Cmd {
 		for i := range stories.UserStories {
 			stories.UserStories[i].ID = smith.GenerateID("STORY", len(m.plan.UserStories)+i+1)
 			stories.UserStories[i].EpicID = epic.ID
-			m.plan.UserStories = append(m.plan.UserStories, state.UserStory{ID: stories.UserStories[i].ID, Title: stories.UserStories[i].Title, Story: stories.UserStories[i].Story, Priority: stories.UserStories[i].Priority, EpicID: stories.UserStories[i].EpicID})
+			m.plan.UserStories = append(m.plan.UserStories, state.UserStory{ID: stories.UserStories[i].ID, Title: stories.UserStories[i].Title, Story: stories.UserStories[i].Story, Priority: stories.UserStories[i].Priority, EpicID: stories.UserStories[i].EpicID, Checklist: state.Checklist{Name: stories.UserStories[i].Checklist.Name, Items: stories.UserStories[i].Checklist.Items}})
 		}
 
 		return storiesForEpicGeneratedMsg{stories: stories}

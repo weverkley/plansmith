@@ -45,22 +45,21 @@ func (c *Client) CreateProjectBoard(name string) (*trello.Board, error) {
 
 	// Create default lists
 	listNames := []string{"Epics", "User Stories (Backlog)", "To Do (Ready)", "Doing", "Review", "Done"}
+	
+	// Create lists and store them in a map for easy access
+	createdLists := make(map[string]*trello.List)
 	for _, listName := range listNames {
-		// Use the client to create the list with the correct API
-		_, err := c.client.CreateList(&board, listName, trello.Defaults())
+		newList, err := c.client.CreateList(&board, listName, trello.Defaults())
 		if err != nil {
 			return nil, fmt.Errorf("failed to create list %s: %w", listName, err)
 		}
+		createdLists[listName] = newList
 	}
 
-	// Reorder lists
-	lists, err = board.GetLists(trello.Defaults())
-	if err != nil {
-		return nil, fmt.Errorf("failed to get lists for reordering: %w", err)
-	}
-
-	for i, list := range lists {
-		pos := float32(i)
+	// Reorder lists based on the desired order
+	for i, listName := range listNames {
+		list := createdLists[listName]
+		pos := float32(i * 1000) // Use a larger step to avoid floating point issues
 		list.Pos = pos
 		err := list.Update(trello.Arguments{"pos": fmt.Sprintf("%f", pos)})
 		if err != nil {
@@ -224,17 +223,12 @@ func (c *Client) PopulateBoard(boardID string, plan *Plan) error {
 		}
 
 		// Add Definition of Done checklist
-		dodItems := []string{
-			"Code implemented and reviewed",
-			"Unit tests passed",
-			"Acceptance criteria met",
-			"Documentation updated",
-			"Deployed to staging/QA environment",
-		}
-
-		_, err = c.CreateChecklist(card.ID, "Definition of Done", dodItems)
-		if err != nil {
-			return fmt.Errorf("failed to create DoD checklist: %w", err)
+		if story.Checklist.Name != "" && len(story.Checklist.Items) > 0 {
+			localChecklist := story.Checklist
+			_, err = c.CreateChecklist(card.ID, localChecklist.Name, localChecklist.Items)
+			if err != nil {
+				return fmt.Errorf("failed to create checklist for story %s: %w", story.Title, err)
+			}
 		}
 	}
 

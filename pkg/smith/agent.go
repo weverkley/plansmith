@@ -85,6 +85,12 @@ type UserStory struct {
 	Story    string `json:"story"`
 	Priority int    `json:"priority"`
 	EpicID   string    `json:"epic_id"`
+	Checklist Checklist `json:"checklist"`
+}
+
+type Checklist struct {
+	Name  string   `json:"name"`
+	Items []string `json:"items"`
 }
 
 func (a *Agent) GenerateStories(vision, epicName, epicID string) (*StoryResponse, error) {
