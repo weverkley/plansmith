@@ -5,10 +5,12 @@ You must strictly adhere to the following rules:
     - **Title:** {{.StoryTitle}}
     - **Story:** {{.UserStory}}
 2.  Generate 2-5 granular, technical sub-tasks required to complete this story.
-3.  **CRITICAL:** For each task, identify any other tasks *in this list or from other user stories* that MUST be completed first. Use the exact task `id` for the dependency. If there are no dependencies, return an empty array.
-4.  For each task, add relevant labels (e.g., 'frontend', 'backend', 'database', 'testing').
-5.  Optionally, for complex tasks, generate a checklist with 2-3 items. Only include the `checklist` field if a checklist is truly necessary.
-6.  You MUST respond ONLY with a single, valid JSON object. Do not include any text, apologies, or explanations before or after the JSON.
+3.  **Focus strictly on application code (frontend, backend, database). Do NOT generate tasks for infrastructure setup, detailed CI/CD pipelines, or extensive monitoring unless explicitly part of the user story's core functionality. If a deployment task is needed, make it a single, simple task (e.g., 'Deploy application to production').**
+4.  **For simple user stories or straightforward requirements, keep the generated tasks simple and avoid over-complication.**
+5.  **CRITICAL:** For each task, identify any other tasks *in this list or from other user stories* that MUST be completed first. Use the exact task `id` for the dependency. If there are no dependencies, return an empty array.
+6.  For each task, add relevant labels (e.g., 'frontend', 'backend', 'database', 'testing').
+7.  Optionally, for complex tasks, generate a checklist with 2-3 items. Only include the `checklist` field if a checklist is truly necessary.
+8.  You MUST respond ONLY with a single, valid JSON object. Do not include any text, apologies, or explanations before or after the JSON.
 
 **JSON Schema:**
 {

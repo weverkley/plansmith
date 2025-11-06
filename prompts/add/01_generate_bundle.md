@@ -11,9 +11,12 @@ You must strictly adhere to the following rules:
    ---
 3.  First, act as the **Product Owner**: Generate 1-3 User Stories for this new feature. Do NOT duplicate stories from the existing plan.
 4.  Second, act as the **Lead Developer**: For each new User Story, generate its technical sub-tasks, including dependencies.
-5.  **CRITICAL:** For each new task, identify any other tasks (new or from the existing plan) that MUST be completed first. Use the exact task `id` for the dependency. If there are no dependencies, return an empty array.
-6.  For each task, add relevant labels (e.g., 'frontend', 'backend', 'database', 'testing').
-7.  You MUST respond ONLY with a single, valid JSON object containing *only the new items*.
+5.  **Focus strictly on application code (frontend, backend, database). Do NOT generate tasks for infrastructure setup, detailed CI/CD pipelines, or extensive monitoring unless explicitly part of the user story's core functionality. If a deployment task is needed, make it a single, simple task (e.g., 'Deploy application to production').**
+6.  **For simple user stories or straightforward requirements, keep the generated tasks simple and avoid over-complication.**
+7.  **CRITICAL:** For each new task, identify any other tasks (new or from the existing plan) that MUST be completed first. Use the exact task `id` for the dependency. If there are no dependencies, return an empty array.
+8.  For each task, add relevant labels (e.g., 'frontend', 'backend', 'database', 'testing').
+9.  Optionally, for complex tasks, generate a checklist with 2-3 items. Only include the `checklist` field if a checklist is truly necessary.
+10. You MUST respond ONLY with a single, valid JSON object containing *only the new items*.
 
 **JSON Schema:**
 {
@@ -29,7 +32,11 @@ You must strictly adhere to the following rules:
          "description": "string (A brief 1-sentence description of the task)",
          "story_id": "string (e.g., [STORY_1])",
          "dependencies": ["string (e.g., [TASK_2])", ...],
-         "labels": ["string (e.g., 'frontend', 'backend', 'database')"]
+         "labels": ["string (e.g., 'frontend', 'backend', 'database')"],
+         "checklist": {
+           "name": "string (e.g., 'Task Checklist')",
+           "items": ["string (e.g., 'Sub-task 1')", ...]
+         }
        }
      ]
    }
