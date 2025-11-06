@@ -139,7 +139,7 @@ func (f *FilePicker) updateFiles() {
 			})
 		} else {
 			// Always show all files when filter is set to "all"
-			if f.filter == "all" || strings.HasSuffix(entry.Name(), ".md") {
+			if f.filter == "all" || strings.HasSuffix(entry.Name(), ".md") || strings.HasSuffix(entry.Name(), ".json") {
 				files = append(files, fileItem{
 					name:  entry.Name(),
 					isDir: false,

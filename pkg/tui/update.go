@@ -145,9 +145,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					if input == "yes" {
 						m.chat.AddMessage("assistant", "Generating tasks...")
 						m.chat.SetLoading(true)
-						for i := 0; i < len(m.plan.UserStories); i++ {
-							cmds = append(cmds, m.generateTasksCmd())
-						}
+						cmds = append(cmds, m.generateTasksCmd())
 						m.conversationContext = ContextNone // Reset context after starting generation
 						logging.Info("Stories confirmed, starting task generation.")
 					} else if input == "no" {
@@ -536,18 +534,14 @@ func (m *Model) generateTasksCmd() tea.Cmd {
 		}
 
 		for i := range tasks.Tasks {
+			newTask := state.Task{ID: tasks.Tasks[i].ID, Title: tasks.Tasks[i].Title, Description: tasks.Tasks[i].Description, StoryID: story.ID, Dependencies: tasks.Tasks[i].Dependencies, Labels: tasks.Tasks[i].Labels}
+			if tasks.Tasks[i].Checklist.Name != "" || len(tasks.Tasks[i].Checklist.Items) > 0 {
+				newTask.Checklist = state.Checklist{Name: tasks.Tasks[i].Checklist.Name, Items: tasks.Tasks[i].Checklist.Items}
+			}
+			m.plan.Tasks = append(m.plan.Tasks, newTask)
+		}
 
-			tasks.Tasks[i].ID = smith.GenerateID("TASK", len(m.plan.Tasks)+i+1)
-
-						tasks.Tasks[i].StoryID = story.ID
-
-						m.plan.Tasks = append(m.plan.Tasks, state.Task{ID: tasks.Tasks[i].ID, Title: tasks.Tasks[i].Title, Description: tasks.Tasks[i].Description, StoryID: tasks.Tasks[i].StoryID, Dependencies: tasks.Tasks[i].Dependencies, Labels: tasks.Tasks[i].Labels, Checklist: state.Checklist{Name: tasks.Tasks[i].Checklist.Name, Items: tasks.Tasks[i].Checklist.Items}})
-
-					}
-
-			
-
-					return tasksForStoryGeneratedMsg{tasks: tasks}
+		return tasksForStoryGeneratedMsg{tasks: tasks}
 
 	}
 
