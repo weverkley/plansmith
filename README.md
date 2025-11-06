@@ -8,11 +8,12 @@ PlanSmith is an interactive, chat-like terminal application that "crafts" raw pr
 
 - Transform markdown project descriptions into structured plans
 - Generate user stories and technical tasks with AI assistance
-- Create Trello boards with pre-populated cards
+- Create Trello boards with pre-populated cards, labels, and checklists
 - Review and approve plans before creating boards
 - Add new features to existing projects
 - List available AI models for the selected provider
 - Chat-based interface with file picker
+- Intelligent prompt guidance for focused and simplified task generation
 
 ## Installation
 
@@ -58,14 +59,14 @@ You can specify which model to use for each provider in the `models` section of 
 ## How It Works
 
 1. Provide a markdown file describing your project
-2. PlanSmith uses AI to generate a structured plan with epics, user stories, and tasks
+2. PlanSmith uses AI to generate a structured plan with epics, user stories, and tasks, including labels, dependencies, and optional checklists.
 3. Review and approve the plan in the TUI
-4. PlanSmith creates a Trello board with cards for each item
+4. PlanSmith creates a Trello board with cards for each item, with hardcoded "Definition of Done" checklists for stories and AI-generated checklists for tasks when applicable. Card dependencies are linked.
 
 For existing projects:
 1. Load an existing project plan
 2. Provide a markdown file describing a new feature
-3. PlanSmith uses AI to generate stories and tasks for the new feature
+3. PlanSmith uses AI to generate stories and tasks for the new feature, including labels, dependencies, and optional checklists.
 4. Review and approve the additions
 5. PlanSmith updates the Trello board with the new items
 
@@ -109,12 +110,14 @@ Current functionality:
 1. TUI with all planned states
 2. Processing markdown files into project plans (using real AI when API keys are provided)
 3. Saving plans to JSON files
-4. Creating Trello boards with basic structure (using real Trello API when keys are provided)
-5. Loading existing plans
+4. Creating Trello boards with correct lane order, labels, hardcoded story checklists, optional AI-generated task checklists, and linked card dependencies.
+5. Loading existing plans (including `.json` files via file picker)
 6. Adding new features to existing projects
 7. Support for multiple AI providers (Gemini, OpenAI, Qwen)
 8. Model selection for each AI provider
 9. Chat-based interface with file picker
+10. Improved prompt guidance for focused and simplified task generation.
+11. Rate limiting implemented for AI generative endpoint calls.
 
 ## Development Progress
 
@@ -123,6 +126,6 @@ Current functionality:
 - [x] Phase 3: State & Trello Service
 - [x] Phase 4: Full Prompt Definitions
 - [x] Phase 5: TUI-Driven Agentic Workflow
-- [ ] Phase 6: Testing & Deployment
+- [x] Phase 6: Testing & Deployment
 
-The core functionality is implemented and the application can be run. The remaining work focuses on testing and deployment.
+The core functionality is implemented and the application can be run. All identified bugs have been addressed. The remaining work focuses on further testing and potential future enhancements.
