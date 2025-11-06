@@ -44,13 +44,27 @@ func (c *Client) CreateProjectBoard(name string) (*trello.Board, error) {
 	}
 
 	// Create default lists
-	listNames := []string{"Done", "Review", "Doing", "To Do (Ready)", "User Stories (Backlog)", "Epics"}
-	for i := len(listNames) - 1; i >= 0; i-- {
-		listName := listNames[i]
+	listNames := []string{"Epics", "User Stories (Backlog)", "To Do (Ready)", "Doing", "Review", "Done"}
+	for _, listName := range listNames {
 		// Use the client to create the list with the correct API
 		_, err := c.client.CreateList(&board, listName, trello.Defaults())
 		if err != nil {
 			return nil, fmt.Errorf("failed to create list %s: %w", listName, err)
+		}
+	}
+
+	// Reorder lists
+	lists, err = board.GetLists(trello.Defaults())
+	if err != nil {
+		return nil, fmt.Errorf("failed to get lists for reordering: %w", err)
+	}
+
+	for i, list := range lists {
+		pos := float32(i)
+		list.Pos = pos
+		err := list.Update(trello.Arguments{"pos": fmt.Sprintf("%f", pos)})
+		if err != nil {
+			return nil, fmt.Errorf("failed to update list %s position: %w", list.Name, err)
 		}
 	}
 
