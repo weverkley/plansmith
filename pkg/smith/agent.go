@@ -3,6 +3,8 @@ package smith
 import (
 	"encoding/json"
 	"fmt"
+	"time"
+
 	"plansmith/pkg/ai"
 	"plansmith/pkg/logging"
 )
@@ -54,6 +56,7 @@ func (a *Agent) GenerateVision(markdownInput string) (*VisionResponse, error) {
 		logging.Error("Failed to execute vision prompt: %v", err)
 		return nil, fmt.Errorf("failed to execute vision prompt: %w", err)
 	}
+	time.Sleep(1 * time.Second)
 
 	logging.Info("Received vision response (length: %d)", len(response))
 
@@ -107,6 +110,7 @@ func (a *Agent) GenerateStories(vision, epicName, epicID string) (*StoryResponse
 		logging.Error("Failed to execute stories prompt: %v", err)
 		return nil, fmt.Errorf("failed to execute stories prompt: %w", err)
 	}
+	time.Sleep(1 * time.Second)
 
 	logging.Info("Received stories response (length: %d)", len(response))
 
@@ -167,6 +171,7 @@ func (a *Agent) GenerateTasks(storyTitle, story, storyID string) (*TaskResponse,
 		logging.Error("Failed to execute tasks prompt: %v", err)
 		return nil, fmt.Errorf("failed to execute tasks prompt: %w", err)
 	}
+	time.Sleep(1 * time.Second)
 
 	logging.Info("Received tasks response (length: %d)", len(response))
 
@@ -225,6 +230,7 @@ func (a *Agent) GenerateAddBundle(currentPlanJSON string, markdownInput string) 
 		logging.Error("Failed to execute bundle prompt: %v", err)
 		return nil, fmt.Errorf("failed to execute bundle prompt: %w", err)
 	}
+	time.Sleep(1 * time.Second)
 
 	logging.Info("Received bundle response (length: %d)", len(response))
 
