@@ -28,7 +28,7 @@ func NewGeminiExecutor(apiKey string, model string) (*GeminiExecutor, error) {
 
 	// If no model is specified, default to gemini-pro
 	if model == "" {
-		model = "gemini-pro"
+		model = "gemini-flash"
 	}
 
 	return &GeminiExecutor{
