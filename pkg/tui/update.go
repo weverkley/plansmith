@@ -504,7 +504,7 @@ func (m *Model) generateStoriesCmd() tea.Cmd {
 		for i := range stories.UserStories {
 			stories.UserStories[i].ID = smith.GenerateID("STORY", len(m.plan.UserStories)+i+1)
 			stories.UserStories[i].EpicID = epic.ID
-			m.plan.UserStories = append(m.plan.UserStories, state.UserStory{ID: stories.UserStories[i].ID, Title: stories.UserStories[i].Title, Story: stories.UserStories[i].Story, Priority: stories.UserStories[i].Priority, EpicID: stories.UserStories[i].EpicID, Checklist: state.Checklist{Name: stories.UserStories[i].Checklist.Name, Items: stories.UserStories[i].Checklist.Items}})
+			m.plan.UserStories = append(m.plan.UserStories, state.UserStory{ID: stories.UserStories[i].ID, Title: stories.UserStories[i].Title, Story: stories.UserStories[i].Story, Priority: stories.UserStories[i].Priority, EpicID: stories.UserStories[i].EpicID})
 		}
 
 		return storiesForEpicGeneratedMsg{stories: stories}
@@ -539,15 +539,15 @@ func (m *Model) generateTasksCmd() tea.Cmd {
 
 			tasks.Tasks[i].ID = smith.GenerateID("TASK", len(m.plan.Tasks)+i+1)
 
-			tasks.Tasks[i].StoryID = story.ID
+						tasks.Tasks[i].StoryID = story.ID
 
-			m.plan.Tasks = append(m.plan.Tasks, state.Task{ID: tasks.Tasks[i].ID, Title: tasks.Tasks[i].Title, Description: tasks.Tasks[i].Description, StoryID: tasks.Tasks[i].StoryID, Dependencies: tasks.Tasks[i].Dependencies, Labels: tasks.Tasks[i].Labels})
+						m.plan.Tasks = append(m.plan.Tasks, state.Task{ID: tasks.Tasks[i].ID, Title: tasks.Tasks[i].Title, Description: tasks.Tasks[i].Description, StoryID: tasks.Tasks[i].StoryID, Dependencies: tasks.Tasks[i].Dependencies, Labels: tasks.Tasks[i].Labels, Checklist: state.Checklist{Name: tasks.Tasks[i].Checklist.Name, Items: tasks.Tasks[i].Checklist.Items}})
 
-		}
+					}
 
+			
 
-
-		return tasksForStoryGeneratedMsg{tasks: tasks}
+					return tasksForStoryGeneratedMsg{tasks: tasks}
 
 	}
 

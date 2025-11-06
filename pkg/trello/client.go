@@ -223,12 +223,17 @@ func (c *Client) PopulateBoard(boardID string, plan *Plan) error {
 		}
 
 		// Add Definition of Done checklist
-		if story.Checklist.Name != "" && len(story.Checklist.Items) > 0 {
-			localChecklist := story.Checklist
-			_, err = c.CreateChecklist(card.ID, localChecklist.Name, localChecklist.Items)
-			if err != nil {
-				return fmt.Errorf("failed to create checklist for story %s: %w", story.Title, err)
-			}
+		dodItems := []string{
+			"Code implemented and reviewed",
+			"Unit tests passed",
+			"Acceptance criteria met",
+			"Documentation updated",
+			"Deployed to staging/QA environment",
+		}
+
+		_, err = c.CreateChecklist(card.ID, "Definition of Done", dodItems)
+		if err != nil {
+			return fmt.Errorf("failed to create DoD checklist: %w", err)
 		}
 	}
 
@@ -285,6 +290,14 @@ func (c *Client) PopulateBoard(boardID string, plan *Plan) error {
 		err := c.client.CreateCard(card, trello.Defaults())
 		if err != nil {
 			return fmt.Errorf("failed to create task card: %w", err)
+		}
+
+		// Add checklist for task if provided by AI
+		if task.Checklist.Name != "" && len(task.Checklist.Items) > 0 {
+			_, err = c.CreateChecklist(card.ID, task.Checklist.Name, task.Checklist.Items)
+			if err != nil {
+				return fmt.Errorf("failed to create checklist for task %s: %w", task.Title, err)
+			}
 		}
 	}
 

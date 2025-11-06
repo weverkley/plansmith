@@ -15,6 +15,7 @@ type Task struct {
 	StoryID      string   `json:"story_id"`
 	Dependencies []string `json:"dependencies"`
 	Labels       []string `json:"labels"`
+	Checklist    LocalChecklist `json:"checklist,omitempty"`
 }
 
 type Epic struct {
@@ -24,27 +25,15 @@ type Epic struct {
 
 type UserStory struct {
 
-	ID        string    `json:"id"`
+	ID       string    `json:"id"`
 
-	Title     string `json:"title"`
+	Title    string `json:"title"`
 
-	Story     string `json:"story"`
+	Story    string `json:"story"`
 
-	Priority  int    `json:"priority"`
+	Priority int    `json:"priority"`
 
-	EpicID    string    `json:"epic_id"`
-
-	Checklist LocalChecklist `json:"checklist"`
-
-}
-
-
-
-type LocalChecklist struct {
-
-	Name  string   `json:"name"`
-
-	Items []string `json:"items"`
+	EpicID   string    `json:"epic_id"`
 
 }
 
