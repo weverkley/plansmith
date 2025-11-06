@@ -39,6 +39,16 @@ type UserStory struct {
 
 
 
+type LocalChecklist struct {
+
+	Name  string   `json:"name"`
+
+	Items []string `json:"items"`
+
+}
+
+
+
 // Checklist represents a Trello checklist.
 
 // https://developers.trello.com/reference/#checklist-object
