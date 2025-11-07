@@ -106,6 +106,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		otherComponentsHeight := lipgloss.Height(inputView) + lipgloss.Height(help)
 		m.chat.viewport.Height = m.height - otherComponentsHeight
 
+	case tea.MouseMsg:
+		m.chat, cmd = m.chat.Update(msg)
+		cmds = append(cmds, cmd)
+
 	case tea.KeyMsg:
 		logging.Debug("KeyMsg received: %s, Context: %v", msg.String(), m.conversationContext)
 

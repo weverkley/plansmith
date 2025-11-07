@@ -39,7 +39,7 @@ func NewChat() Chat {
 }
 
 func (c Chat) Init() tea.Cmd {
-	return nil
+	return c.viewport.Init()
 }
 
 func (c *Chat) Update(msg tea.Msg) (*Chat, tea.Cmd) {

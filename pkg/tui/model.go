@@ -206,7 +206,7 @@ func NewModel(dummy bool) Model {
 
 func (m Model) Init() tea.Cmd {
 	logging.Info("Initializing TUI model")
-	return textinput.Blink
+	return tea.Batch(textinput.Blink, tea.EnterAltScreen)
 }
 
 // GetChatMessages returns the current chat messages.
