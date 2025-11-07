@@ -2,45 +2,54 @@ package tui
 
 import "github.com/charmbracelet/lipgloss"
 
+const (
+	white       = lipgloss.Color("#FFFFFF")
+	black       = lipgloss.Color("#000000")
+	purple      = lipgloss.Color("#7D56F4")
+	lightPurple = lipgloss.Color("#AD58B4")
+	darkGray    = lipgloss.Color("#333333")
+	lightGray   = lipgloss.Color("#808080")
+	blue        = lipgloss.Color("#00BFFF")
+	green       = lipgloss.Color("#32CD32")
+	yellow      = lipgloss.Color("#FFFF00")
+	red         = lipgloss.Color("#FF0000")
+	cyan        = lipgloss.Color("#00FFFF")
+)
+
 var (
+	// General
+	appStyle = lipgloss.NewStyle().
+			Padding(1, 2).
+			Margin(1, 2)
+
 	titleStyle = lipgloss.NewStyle().
 			Bold(true).
-			Foreground(lipgloss.Color("#FAFAFA")).
-			Background(lipgloss.Color("#7D56F4")).
-			PaddingTop(1).
-			PaddingBottom(1).
-			PaddingLeft(4).
-			PaddingRight(4).
+			Foreground(white).
+			Background(purple).
+			Padding(1, 2).
 			MarginBottom(1)
 
-	menuItemStyle = lipgloss.NewStyle().
-			PaddingLeft(2).
-			PaddingRight(2)
-
-	selectedMenuItemStyle = lipgloss.NewStyle().
-				Bold(true).
-				Foreground(lipgloss.Color("#7D56F4")).
-				PaddingLeft(2).
-				PaddingRight(2)
-
-	errorStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#FF0000")).
-			Background(lipgloss.Color("#FFFFFF")).
-			Bold(true)
-
-	spinnerStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#7D56F4"))
-
 	helpStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#808080")).
-			Italic(true)
-
-	inputStyle = lipgloss.NewStyle().
-			Border(lipgloss.NormalBorder()).
-			BorderForeground(lipgloss.Color("#7D56F4")).
+			Foreground(lightGray).
+			Italic(true).
 			Padding(0, 1)
 
-	// Styles for the confirmation list
+	// Input
+	inputStyle = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(purple).
+			Padding(0, 1)
+
+	// Spinner
+	spinnerStyle = lipgloss.NewStyle().
+			Foreground(purple)
+
+	// List
+	listStyle = lipgloss.NewStyle().
+			Border(lipgloss.NormalBorder(), false, false, false, true).
+			BorderForeground(purple).
+			Padding(0, 1)
+
 	NormalTitleStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.AdaptiveColor{Light: "#1A1A1A", Dark: "#dddddd"}).
 				Padding(0, 0, 0, 2)
@@ -65,39 +74,45 @@ var (
 	DimmedDescStyle = DimmedTitleStyle.Copy().
 			Foreground(lipgloss.AdaptiveColor{Light: "#C2B8C2", Dark: "#4D4D4D"})
 
-	// Styles for chat messages
+	// Chat
+	chatContainerStyle = lipgloss.NewStyle().
+				Border(lipgloss.RoundedBorder()).
+				BorderForeground(purple).
+				Padding(1)
+
 	userMessageStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#00BFFF"))
+				Foreground(blue).
+				Padding(0, 1)
 	userIcon = "👤"
 
 	assistantMessageStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#32CD32"))
+				Foreground(green).
+				Padding(0, 1)
 	assistantIcon = "🤖"
 
 	systemMessageStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#FFFF00"))
+				Foreground(yellow).
+				Padding(0, 1)
 	systemIcon = "⚙️"
 
 	errorMessageStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#FF0000"))
+				Foreground(red).
+				Bold(true).
+				Padding(0, 1)
 	errorIcon = "🔥"
 
 	pathStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#00FFFF"))
+			Foreground(cyan)
 
 	fileStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#00FF00"))
+			Foreground(green)
 
-	helpTextStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#808080")).
-			Italic(true)
-
-	// Styles for autocomplete
+	// Autocomplete
 	suggestionStyle = lipgloss.NewStyle().
 			PaddingLeft(1)
 
 	activeSuggestionStyle = lipgloss.NewStyle().
-				Background(lipgloss.Color("#7D56F4")).
-				Foreground(lipgloss.Color("#FFFFFF")).
+				Background(purple).
+				Foreground(white).
 				PaddingLeft(1)
 )

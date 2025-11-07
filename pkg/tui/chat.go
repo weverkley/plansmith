@@ -50,7 +50,7 @@ func (c *Chat) Update(msg tea.Msg) (*Chat, tea.Cmd) {
 		c.width = msg.Width
 		c.height = msg.Height
 		c.viewport.Width = msg.Width
-
+		c.viewport.Height = msg.Height - 10 // Adjust for input and help text
 	case spinner.TickMsg:
 		if c.isLoading {
 			c.spinner, cmd = c.spinner.Update(msg)
@@ -66,7 +66,7 @@ func (c Chat) View() string {
 
 	// Add messages
 	for _, msg := range c.messages {
-		content = append(content, c.renderMessage(msg))
+		content = append(content, c.renderMessage(msg, c.width-4)) // Subtract padding
 	}
 
 	// Add loading indicator if needed
@@ -76,15 +76,15 @@ func (c Chat) View() string {
 	contentStr := lipgloss.JoinVertical(lipgloss.Left, content...)
 	if len(contentStr) == 0 {
 		// Show a placeholder when there are no messages
-		contentStr = helpTextStyle.Render("No messages yet. Type 'help' to get started.")
+		contentStr = helpStyle.Render("No messages yet. Type 'help' to get started.")
 	}
 
 	c.viewport.SetContent(contentStr)
 
-	return c.viewport.View()
+	return chatContainerStyle.Width(c.width).Render(c.viewport.View())
 }
 
-func (c Chat) renderMessage(msg ChatMessage) string {
+func (c Chat) renderMessage(msg ChatMessage, width int) string {
 	var roleStyle lipgloss.Style
 	var roleIcon string
 
@@ -107,7 +107,7 @@ func (c Chat) renderMessage(msg ChatMessage) string {
 	}
 
 	// Format the message content with path/file highlighting
-	formattedContent := formatMessageContent(msg.Content)
+	formattedContent := formatMessageContent(msg.Content, width)
 
 	// Combine icon, role, and content with proper spacing
 	return lipgloss.JoinVertical(lipgloss.Left,
@@ -117,12 +117,12 @@ func (c Chat) renderMessage(msg ChatMessage) string {
 	)
 }
 
-func (c Chat) renderMessages() []string {
+func (c Chat) renderMessages(width int) []string {
 	var content []string
 
 	// Add messages
 	for _, msg := range c.messages {
-		content = append(content, c.renderMessage(msg))
+		content = append(content, c.renderMessage(msg, width))
 	}
 
 	return content
@@ -135,35 +135,19 @@ var ( // Regex for path and file detection
 	fileRegex = regexp.MustCompile(`\b[\w-]+\.[\w-.]+\b`)
 )
 
-func formatMessageContent(content string) string {
+func formatMessageContent(content string, width int) string {
 	// Apply path highlighting first
 	content = pathRegex.ReplaceAllStringFunc(content, func(s string) string {
 		return pathStyle.Render(s)
 	})
 
-	// Apply file highlighting. This will highlight filenames that are not part of a path
-	// already highlighted. If a filename is part of a path, the path style will take precedence
-	// because it was applied first. This is a simpler heuristic.
+	// Apply file highlighting.
 	content = fileRegex.ReplaceAllStringFunc(content, func(s string) string {
 		return fileStyle.Render(s)
 	})
 
-	// Simple word wrapping
-	lines := strings.Split(content, "\n")
-	var wrappedLines []string
-
-	for _, line := range lines {
-		if lipgloss.Width(line) > 80 {
-			// Wrap long lines, this is still imperfect with ANSI codes
-			// but should prevent the "0mist" issue by having more precise regexes.
-			// A proper ANSI-aware word wrapper is needed for a perfect solution.
-			wrappedLines = append(wrappedLines, lipgloss.NewStyle().MaxWidth(80).Render(line))
-		} else {
-			wrappedLines = append(wrappedLines, line)
-		}
-	}
-
-	return lipgloss.JoinVertical(lipgloss.Left, wrappedLines...)
+	// Word wrapping
+	return lipgloss.NewStyle().Width(width).Render(content)
 }
 
 func (c *Chat) AddMessage(role, content string) {
@@ -174,7 +158,7 @@ func (c *Chat) AddMessage(role, content string) {
 	})
 
 	// Update the viewport with the new content and scroll to bottom
-	c.viewport.SetContent(lipgloss.JoinVertical(lipgloss.Left, c.renderMessages()...))
+	c.viewport.SetContent(lipgloss.JoinVertical(lipgloss.Left, c.renderMessages(c.width-4)...))
 	c.viewport.GotoBottom()
 }
 

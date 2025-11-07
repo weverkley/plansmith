@@ -1,11 +1,14 @@
 package tui
 
 import (
+	"fmt"
 	"plansmith/pkg/ai"
 	"plansmith/pkg/logging"
 	"plansmith/pkg/smith"
 	"plansmith/pkg/state"
 	"plansmith/pkg/trello"
+
+
 
 	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/spinner"
@@ -209,4 +212,10 @@ func (m Model) Init() tea.Cmd {
 // GetChatMessages returns the current chat messages.
 func (m Model) GetChatMessages() []ChatMessage {
 	return m.chat.messages
+}
+
+func (m *Model) SetSize(width, height int) {
+	m.width = width
+	m.height = height
+	logging.Info(fmt.Sprintf("Resized TUI to %d x %d", width, height))
 }

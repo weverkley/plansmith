@@ -79,11 +79,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 
 	case tea.WindowSizeMsg:
-		m.width = msg.Width
-		m.height = msg.Height
-		m.chat.width = msg.Width
-		m.filePicker.width = msg.Width
-		m.filePicker.height = msg.Height - 6
+		m.SetSize(msg.Width, msg.Height)
 
 		if !m.initialized {
 			m.chat.AddMessage("system", "Plansmith is here!")
