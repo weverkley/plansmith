@@ -19,8 +19,8 @@ const (
 var (
 	// General
 	appStyle = lipgloss.NewStyle().
-			Padding(1, 2).
-			Margin(1, 2)
+			Padding(0, 1).
+			Margin(0, 1)
 
 	titleStyle = lipgloss.NewStyle().
 			Bold(true).
