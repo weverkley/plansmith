@@ -70,6 +70,14 @@ func (c *Client) CreateProjectBoard(name string) (*trello.Board, error) {
 	return &board, nil
 }
 
+func (c *Client) GetUserBoards() ([]*trello.Board, error) {
+	boards, err := c.client.GetMyBoards(trello.Defaults())
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user boards: %w", err)
+	}
+	return boards, nil
+}
+
 func (c *Client) CreateChecklist(cardID, name string, items []string) (*Checklist, error) {
 	checklist := &Checklist{
 		Name:   name,
@@ -297,6 +305,132 @@ func (c *Client) PopulateBoard(boardID string, plan *Plan) error {
 			_, err = c.CreateChecklist(card.ID, task.Checklist.Name, task.Checklist.Items)
 			if err != nil {
 				return fmt.Errorf("failed to create checklist for task %s: %w", task.Title, err)
+			}
+		}
+	}
+
+	return nil
+}
+
+func (c *Client) AddCardsToBoard(boardID string, bundle *BundleResponse) error {
+	logging.Info("Adding cards to board %s", boardID)
+	board, err := c.client.GetBoard(boardID, trello.Defaults())
+	if err != nil {
+		return fmt.Errorf("failed to get board: %w", err)
+	}
+
+	// Get lists
+	lists, err := board.GetLists(trello.Defaults())
+	if err != nil {
+		return fmt.Errorf("failed to get lists: %w", err)
+	}
+
+	// Map list names to IDs
+	listMap := make(map[string]*trello.List)
+	for _, list := range lists {
+		listMap[list.Name] = list
+	}
+
+	// --- Label Management ---
+	// Fetch existing labels
+	existingLabels, err := board.GetLabels(trello.Defaults())
+	if err != nil {
+		return fmt.Errorf("failed to get existing labels: %w", err)
+	}
+	labelMap := make(map[string]*trello.Label)
+	for _, label := range existingLabels {
+		labelMap[label.Name] = label
+	}
+
+	// Function to get or create a label
+	getOrCreateLabel := func(name, color string) (*trello.Label, error) {
+		if label, ok := labelMap[name]; ok {
+			return label, nil
+		}
+		newLabel := &trello.Label{Name: name, Color: color}
+		err := board.CreateLabel(newLabel, trello.Defaults())
+		if err != nil {
+			return nil, fmt.Errorf("failed to create label %s: %w", name, err)
+		}
+		labelMap[name] = newLabel
+		return newLabel, nil
+	}
+
+	// Create/get Priority labels
+	priorityLabels := make(map[int]*trello.Label)
+	priorityColors := map[int]string{
+		10: "red", // High priority
+		9:  "orange",
+		8:  "yellow",
+		7:  "green", // Low priority
+	}
+	for p := 7; p <= 10; p++ {
+		labelName := fmt.Sprintf("P%d", p)
+		color := priorityColors[p]
+		label, err := getOrCreateLabel(labelName, color)
+		if err != nil {
+			return err
+		}
+		priorityLabels[p] = label
+	}
+	// --- End Label Management ---
+
+	// Add user stories to "User Stories (Backlog)" list
+	storiesList := listMap["User Stories (Backlog)"]
+	tasksList := listMap["To Do (Ready)"]
+
+	for _, item := range bundle.FeatureBundle {
+		// Create user story card
+		storyCard := &trello.Card{
+			Name:   item.Title,
+			Desc:   item.Story,
+			IDList: storiesList.ID,
+		}
+		if label, ok := priorityLabels[item.Priority]; ok {
+			storyCard.IDLabels = append(storyCard.IDLabels, label.ID)
+		}
+		err := c.client.CreateCard(storyCard, trello.Defaults())
+		if err != nil {
+			return fmt.Errorf("failed to create story card: %w", err)
+		}
+
+		// Add Definition of Done checklist
+		dodItems := []string{
+			"Code implemented and reviewed",
+			"Unit tests passed",
+			"Acceptance criteria met",
+			"Documentation updated",
+			"Deployed to staging/QA environment",
+		}
+		_, err = c.CreateChecklist(storyCard.ID, "Definition of Done", dodItems)
+		if err != nil {
+			return fmt.Errorf("failed to create DoD checklist: %w", err)
+		}
+
+		// Create task cards
+		for _, task := range item.Tasks {
+			taskCard := &trello.Card{
+				Name:   task.Title,
+				Desc:   task.Description,
+				IDList: tasksList.ID,
+			}
+			for _, labelName := range task.Labels {
+				if label, ok := labelMap[labelName]; ok {
+					taskCard.IDLabels = append(taskCard.IDLabels, label.ID)
+				} else {
+					newLabel, err := getOrCreateLabel(labelName, "blue")
+					if err != nil {
+						return err
+					}
+					taskCard.IDLabels = append(taskCard.IDLabels, newLabel.ID)
+				}
+			}
+			if label, ok := priorityLabels[item.Priority]; ok {
+				taskCard.IDLabels = append(taskCard.IDLabels, label.ID)
+			}
+			err := c.client.CreateCard(taskCard, trello.Defaults())
+			if err != nil {
+				return fmt.Errorf("failed to create task card: %w", err)
 			}
 		}
 	}

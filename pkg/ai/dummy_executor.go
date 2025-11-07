@@ -70,3 +70,7 @@ func (d *DummyExecutor) mockTasksResponse() string {
 	jsonResponse, _ := json.Marshal(response)
 	return string(jsonResponse)
 }
+
+func (d *DummyExecutor) ListModels() ([]string, error) {
+	return []string{"dummy-model-1", "dummy-model-2"}, nil
+}

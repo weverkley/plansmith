@@ -72,4 +72,22 @@ type CheckItem struct {
 	IDChecklist string  `json:"idChecklist,omitempty"`
 }
 
+type BundleResponse struct {
+	FeatureBundle []FeatureBundle `json:"feature_bundle"`
+}
+
+type FeatureBundle struct {
+	Title    string       `json:"title"`
+	Story    string       `json:"story"`
+	Priority int          `json:"priority"`
+	Tasks    []BundleTask `json:"tasks"`
+}
+
+type BundleTask struct {
+	Title        string   `json:"title"`
+	Description  string   `json:"description"`
+	Dependencies []string `json:"dependencies"`
+	Labels       []string `json:"labels"`
+}
+
 

@@ -13,6 +13,7 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/viper"
+	trello_client "github.com/adlio/trello"
 )
 
 type ConversationContext int
@@ -27,6 +28,9 @@ const (
 	ContextWaitingForVisionConfirmation
 	ContextWaitingForStoriesConfirmation
 	ContextWaitingForBoardCreationConfirmation
+	ContextWaitingForFeatureFilePath
+	ContextWaitingForFeatureConfirmation
+	ContextWaitingForBoardSelection
 )
 
 type item struct {
@@ -37,9 +41,8 @@ func (i item) Title() string       { return i.title }
 func (i item) Description() string { return i.desc }
 func (i item) FilterValue() string { return i.title }
 
-type initializationMsg struct{}
-
 type Model struct {
+	initialized         bool
 	conversationContext ConversationContext
 	textInput           textinput.Model
 	filePicker          FilePicker
@@ -58,11 +61,14 @@ type Model struct {
 	storyIndex          int
 
 	// AI and services
-	agent        *smith.Agent
-	trelloClient *trello.Client
-	plan         *state.Plan
-	aiProvider   string
-	aiModel      string
+	agent         *smith.Agent
+	trelloClient  *trello.Client
+	plan          *state.Plan
+	featureBundle *smith.BundleResponse
+	boards        []*trello_client.Board
+	selectedBoard *trello_client.Board
+	aiProvider    string
+	aiModel       string
 }
 
 func NewModel(dummy bool) Model {
@@ -157,16 +163,25 @@ func NewModel(dummy bool) Model {
 	agent := smith.NewAgent(executor)
 	logging.Debug("Smith Agent initialized.")
 
-		// Initialize confirmation list
-	confirmationList := list.New([]list.Item{}, list.NewDefaultDelegate(), 0, 0)
+	// Initialize confirmation list
+	delegate := list.NewDefaultDelegate()
+	delegate.Styles.NormalTitle = NormalTitleStyle
+	delegate.Styles.NormalDesc = NormalDescStyle
+	delegate.Styles.SelectedTitle = SelectedTitleStyle
+	delegate.Styles.SelectedDesc = SelectedDescStyle
+	delegate.Styles.DimmedTitle = DimmedTitleStyle
+	delegate.Styles.DimmedDesc = DimmedDescStyle
+
+	confirmationList := list.New([]list.Item{}, delegate, 0, 0)
 	confirmationList.SetShowTitle(false)
 	confirmationList.SetShowHelp(false)
 	confirmationList.SetFilteringEnabled(false)
-	confirmationList.SetHeight(2)
-	confirmationList.SetWidth(10)
+	confirmationList.SetHeight(10)
+	confirmationList.SetWidth(50)
 	logging.Debug("Confirmation list initialized.")
 
 	return Model{
+		initialized:         false,
 		conversationContext: ContextWaitingForNewOrExisting,
 		textInput:           ti,
 		filePicker:          fp,
@@ -188,12 +203,7 @@ func NewModel(dummy bool) Model {
 
 func (m Model) Init() tea.Cmd {
 	logging.Info("Initializing TUI model")
-	return tea.Batch(
-		textinput.Blink,
-		func() tea.Msg {
-			return initializationMsg{}
-		},
-	)
+	return textinput.Blink
 }
 
 // GetChatMessages returns the current chat messages.

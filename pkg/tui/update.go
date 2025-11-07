@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath" // Added import
@@ -17,6 +18,7 @@ import (
 	"plansmith/pkg/smith"
 	"plansmith/pkg/state"
 	"plansmith/pkg/trello"
+	trello_client "github.com/adlio/trello"
 )
 
 // Messages for async operations
@@ -45,9 +47,19 @@ type allTasksGeneratedMsg struct {
 	err   error
 }
 
+type addBundleGeneratedMsg struct {
+	bundle *smith.BundleResponse
+	err    error
+}
+
 type trelloMsg struct {
 	boardURL string
 	err      error
+}
+
+type boardsMsg struct {
+	boards []*trello_client.Board
+	err    error
 }
 
 type listModelsMsg struct {
@@ -61,20 +73,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
 	switch msg := msg.(type) {
-	case initializationMsg:
-		m.chat.AddMessage("system", "Plansmith is here!")
-		m.chat.AddMessage("system", "Like a blacksmith, but for crafting project plans. PlanSmith is an interactive, chat-like terminal application that 'crafts' raw project ideas (from Markdown) into fully-formed, actionable Kanban boards (in Trello), with human review at every step.")
-		m.chat.AddMessage("system", "Version: v1.0")
-		m.chat.AddMessage("system", "Would you like to start a new project or open an existing one?")
-
-		items := []list.Item{
-			item{title: "new", desc: "Start a new project"},
-			item{title: "existing", desc: "Open an existing project"},
-		}
-		m.confirmationList.SetItems(items)
-		m.conversationContext = ContextWaitingForNewOrExisting
-		return m, nil
-
 	case cursor.BlinkMsg,
 		spinner.TickMsg:
 		m.spinner, cmd = m.spinner.Update(msg)
@@ -86,6 +84,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.chat.width = msg.Width
 		m.filePicker.width = msg.Width
 		m.filePicker.height = msg.Height - 6
+
+		if !m.initialized {
+			m.chat.AddMessage("system", "Plansmith is here!")
+			m.chat.AddMessage("system", "Like a blacksmith, but for crafting project plans. PlanSmith is an interactive, chat-like terminal application that 'crafts' raw project ideas (from Markdown) into fully-formed, actionable Kanban boards (in Trello), with human review at every step.")
+			m.chat.AddMessage("system", "Version: v1.0")
+			m.chat.AddMessage("system", "Would you like to start a new project or open an existing one?")
+
+			items := []list.Item{
+				item{title: "new", desc: "Start a new project"},
+				item{title: "existing", desc: "Open an existing project"},
+			}
+			m.confirmationList.SetItems(items)
+			m.conversationContext = ContextWaitingForNewOrExisting
+			m.initialized = true
+		}
 
 		var inputView string
 		if m.filePicker.visible {
@@ -105,7 +118,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.conversationContext == ContextWaitingForVisionConfirmation ||
 			m.conversationContext == ContextWaitingForStoriesConfirmation ||
 			m.conversationContext == ContextWaitingForBoardCreationConfirmation ||
-			m.conversationContext == ContextWaitingForPlanConfirmation {
+			m.conversationContext == ContextWaitingForPlanConfirmation ||
+			m.conversationContext == ContextWaitingForFeatureConfirmation ||
+			m.conversationContext == ContextWaitingForBoardSelection {
 			
 			var listCmd tea.Cmd
 			m.confirmationList, listCmd = m.confirmationList.Update(msg)
@@ -125,9 +140,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.conversationContext = ContextWaitingForFilePath
 						logging.Info("Conversation context changed to ContextWaitingForFilePath")
 					} else if input == "existing" {
-						m.chat.AddMessage("assistant", "Great! Please provide the path to your project's .json file.")
-						m.conversationContext = ContextWaitingForExistingFilePath
-						logging.Info("Conversation context changed to ContextWaitingForExistingFilePath")
+						m.chat.AddMessage("assistant", "Fetching your Trello boards...")
+						m.chat.SetLoading(true)
+						cmds = append(cmds, m.getBoardsCmd())
 					}
 				case ContextWaitingForVisionConfirmation:
 					if input == "yes" {
@@ -176,6 +191,41 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.conversationContext = ContextNone
 						logging.Info("Plan discarded by user.")
 					}
+				case ContextWaitingForFeatureConfirmation:
+					if input == "yes" {
+						m.chat.AddMessage("assistant", "Adding new items to Trello board...")
+						m.chat.SetLoading(true)
+						cmds = append(cmds, addCardsToTrelloCmd(m.stateManager, m.trelloClient, m.featureBundle))
+						m.conversationContext = ContextNone
+						logging.Info("Feature confirmation received, adding cards to Trello.")
+					} else if input == "no" {
+						m.chat.AddMessage("assistant", "New feature discarded.")
+						m.conversationContext = ContextNone
+						logging.Info("Feature discarded by user.")
+					}
+				case ContextWaitingForBoardSelection:
+					selectedItem := m.confirmationList.SelectedItem().(item)
+					boardID := selectedItem.desc
+					for _, board := range m.boards {
+						if board.ID == boardID {
+							m.selectedBoard = board
+							break
+						}
+					}
+
+					// Save the selected board to the state
+					err := m.stateManager.SaveState(&state.State{
+						TrelloBoardID:  m.selectedBoard.ID,
+						TrelloBoardURL: m.selectedBoard.URL,
+					})
+					if err != nil {
+						m.chat.AddMessage("system", fmt.Sprintf("Error saving state: %v", err))
+					}
+
+					m.chat.AddMessage("assistant", fmt.Sprintf("You selected board '%s'.", m.selectedBoard.Name))
+					m.chat.AddMessage("assistant", "Please provide the path to your feature's markdown file.")
+					m.conversationContext = ContextWaitingForFeatureFilePath
+					logging.Info("Board selected, waiting for feature markdown file.")
 				}
 				return m, tea.Batch(cmds...)
 			}
@@ -257,6 +307,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.autocomplete.Visible = false // Hide autocomplete after enter
 				m.chat.AddMessage("user", input)
 
+				// Command handling
+				switch {
+				case strings.HasPrefix(input, "/add-feature"):
+					m.chat.AddMessage("assistant", "Great! Please provide the path to your feature's markdown file.")
+					m.conversationContext = ContextWaitingForFeatureFilePath
+					logging.Info("Conversation context changed to ContextWaitingForFeatureFilePath")
+					return m, nil
+				case strings.HasPrefix(input, "/list-models"):
+					m.chat.AddMessage("assistant", "Fetching available models...")
+					cmds = append(cmds, m.listModels())
+					return m, tea.Batch(cmds...)
+				}
+
 				switch m.conversationContext {
 				case ContextWaitingForNewOrExisting:
 					if strings.ToLower(input) == "new" {
@@ -264,26 +327,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.conversationContext = ContextWaitingForFilePath
 						logging.Info("Conversation context changed to ContextWaitingForFilePath")
 					} else if strings.ToLower(input) == "existing" {
-						m.chat.AddMessage("assistant", "Great! Please provide the path to your project's .json file.")
-						m.conversationContext = ContextWaitingForExistingFilePath
-						logging.Info("Conversation context changed to ContextWaitingForExistingFilePath")
+						m.chat.AddMessage("assistant", "Fetching your Trello boards...")
+						m.chat.SetLoading(true)
+						cmds = append(cmds, m.getBoardsCmd())
 					} else {
 						m.chat.AddMessage("assistant", "Sorry, I didn't understand that. Please type 'new' or 'existing'.")
 						logging.Warn("Invalid input for new/existing project: %s", input)
-					}
-				case ContextWaitingForExistingFilePath:
-					logging.Info("Attempting to load plan from path: %s", input)
-					plan, err := m.stateManager.LoadPlanFromPath(input)
-					if err != nil {
-						m.chat.AddMessage("system", fmt.Sprintf("Error loading plan: %v", err))
-						logging.Error("Failed to load plan from path %s: %v", input, err)
-					} else {
-						m.plan = plan
-						formattedPlan := formatPlan(m.plan)
-						m.chat.AddMessage("assistant", "Here is the loaded plan:\n"+formattedPlan)
-						m.chat.AddMessage("assistant", "What would you like to do with this plan?")
-						m.conversationContext = ContextNone // Or a new context for project dashboard
-						logging.Info("Plan loaded successfully from %s", input)
 					}
 				case ContextWaitingForFilePath:
 					// Check if the file exists at the given path. If not, try to find it.
@@ -306,6 +355,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					cmds = append(cmds, m.generateVisionCmd())
 					m.conversationContext = ContextNone
 					logging.Info("Markdown path set to %s, starting plan generation.", input)
+				case ContextWaitingForFeatureFilePath:
+					m.markdownPath = input
+					m.chat.AddMessage("assistant", fmt.Sprintf("Thanks! I'll start crafting a plan for the new feature from '%s'.", input))
+					m.chat.SetLoading(true)
+					cmds = append(cmds, m.generateAddBundleCmd())
+					m.conversationContext = ContextNone
+					logging.Info("Markdown path for new feature set to %s, starting bundle generation.", input)
 				case ContextWaitingForBoardName:
 					boardName := input
 					if boardName == "" {
@@ -330,7 +386,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.textInput, cmd = m.textInput.Update(msg)
 				cmds = append(cmds, cmd)
 				// Only update autocomplete suggestions if the input value has changed
-				if m.textInput.Value() != "" && (strings.HasSuffix(m.textInput.Value(), "/") || strings.HasSuffix(m.textInput.Value(), "./") || strings.HasSuffix(m.textInput.Value(), "../") || strings.Contains(m.textInput.Value(), string(os.PathSeparator))) {
+				if strings.HasPrefix(m.textInput.Value(), "/") {
+					m.autocomplete.Suggestions = []Suggestion{
+						{Text: "/add-feature", Description: "Add a new feature to the project"},
+						{Text: "/list-models", Description: "List available AI models"},
+					}
+					m.autocomplete.Visible = true
+				} else if m.textInput.Value() != "" && (strings.HasSuffix(m.textInput.Value(), "/") || strings.HasSuffix(m.textInput.Value(), "./") || strings.HasSuffix(m.textInput.Value(), "../") || strings.Contains(m.textInput.Value(), string(os.PathSeparator))) {
 					m.autocomplete.SetSuggestions(m.textInput.Value())
 					m.autocomplete.Visible = true
 					logging.Debug("Autocomplete suggestions updated for input: %s", m.textInput.Value())
@@ -454,9 +516,115 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case trelloMsg:
 		m.chat.SetLoading(false)
 		if msg.err != nil {
-			m.chat.AddMessage("system", fmt.Sprintf("Error creating Trello board: %v", msg.err))
+			m.chat.AddMessage("system", fmt.Sprintf("Error with Trello operation: %v", msg.err))
 		} else {
-			m.chat.AddMessage("assistant", fmt.Sprintf("I've created a Trello board for you at %s", msg.boardURL))
+			m.chat.AddMessage("assistant", fmt.Sprintf("Trello board updated successfully at %s", msg.boardURL))
+
+			// If a feature bundle was just added, update the plan
+			if m.featureBundle != nil {
+				for _, item := range m.featureBundle.FeatureBundle {
+					newStory := state.UserStory{
+						ID:       smith.GenerateID("STORY", len(m.plan.UserStories)+1),
+						Title:    item.Title,
+						Story:    item.Story,
+						Priority: item.Priority,
+					}
+					m.plan.UserStories = append(m.plan.UserStories, newStory)
+
+					for _, task := range item.Tasks {
+						newTask := state.Task{
+							ID:           smith.GenerateID("TASK", len(m.plan.Tasks)+1),
+							Title:        task.Title,
+							Description:  task.Description,
+							StoryID:      newStory.ID,
+							Dependencies: task.Dependencies,
+							Labels:       task.Labels,
+						}
+						m.plan.Tasks = append(m.plan.Tasks, newTask)
+					}
+				}
+
+				err := m.stateManager.SavePlan(m.plan)
+				if err != nil {
+					m.chat.AddMessage("system", fmt.Sprintf("Error saving updated plan: %v", err))
+				} else {
+					m.chat.AddMessage("assistant", "Plan updated and saved successfully.")
+				}
+
+				// Reset the feature bundle
+				m.featureBundle = nil
+			}
+		}
+	case boardsMsg:
+		m.chat.SetLoading(false)
+		if msg.err != nil {
+			m.chat.AddMessage("system", fmt.Sprintf("Error fetching boards: %v", msg.err))
+		} else {
+			m.boards = msg.boards
+			var items []list.Item
+			for _, board := range m.boards {
+				items = append(items, item{title: board.Name, desc: board.ID})
+			}
+			m.confirmationList.SetItems(items)
+			m.chat.AddMessage("assistant", "Please select a board:")
+			m.conversationContext = ContextWaitingForBoardSelection
+		}
+
+	case addBundleGeneratedMsg:
+		m.chat.SetLoading(false)
+		if msg.err != nil {
+			m.chat.AddMessage("system", fmt.Sprintf("Error generating feature bundle: %v", msg.err))
+		} else {
+			m.featureBundle = msg.bundle
+			// Create a temporary plan to show the user what will be added
+			tempPlan := &state.Plan{
+				ProjectName: "New Feature",
+			}
+			for _, item := range msg.bundle.FeatureBundle {
+				newStory := state.UserStory{
+					ID:       smith.GenerateID("STORY", len(m.plan.UserStories)+1),
+					Title:    item.Title,
+					Story:    item.Story,
+					Priority: item.Priority,
+				}
+				tempPlan.UserStories = append(tempPlan.UserStories, newStory)
+
+				for _, task := range item.Tasks {
+					newTask := state.Task{
+						ID:           smith.GenerateID("TASK", len(m.plan.Tasks)+1),
+						Title:        task.Title,
+						Description:  task.Description,
+						StoryID:      newStory.ID,
+						Dependencies: task.Dependencies,
+						Labels:       task.Labels,
+					}
+					tempPlan.Tasks = append(tempPlan.Tasks, newTask)
+				}
+			}
+
+			formattedPlan := formatPlan(tempPlan)
+			m.chat.AddMessage("assistant", "Here's the new feature bundle:\n"+formattedPlan)
+			m.chat.AddMessage("assistant", "Do you want to add these new items to your Trello board?")
+
+			items := []list.Item{
+				item{title: "yes", desc: "Add to Trello"},
+				item{title: "no", desc: "Discard changes"},
+			}
+			m.confirmationList.SetItems(items)
+			m.conversationContext = ContextWaitingForFeatureConfirmation
+		}
+
+	case listModelsMsg:
+		m.chat.SetLoading(false)
+		if msg.err != nil {
+			m.chat.AddMessage("system", fmt.Sprintf("Error fetching models: %v", msg.err))
+		} else {
+			var builder strings.Builder
+			builder.WriteString("Available models:\n")
+			for _, model := range msg.models {
+				builder.WriteString(fmt.Sprintf("- %s\n", model))
+			}
+			m.chat.AddMessage("assistant", builder.String())
 		}
 	}
 
@@ -546,6 +714,75 @@ func (m *Model) generateTasksCmd() tea.Cmd {
 	}
 
 }
+
+func (m *Model) generateAddBundleCmd() tea.Cmd {
+	return func() tea.Msg {
+		logging.Info("Generating feature bundle from file: %s", m.markdownPath)
+
+		markdown, err := os.ReadFile(m.markdownPath)
+		if err != nil {
+			return addBundleGeneratedMsg{err: fmt.Errorf("failed to read markdown file: %w", err)}
+		}
+
+		m.chat.AddMessage("assistant", "Generating feature bundle...")
+
+		planJSON, err := json.Marshal(m.plan)
+		if err != nil {
+			return addBundleGeneratedMsg{err: fmt.Errorf("failed to marshal plan: %w", err)}
+		}
+
+		bundle, err := m.agent.GenerateAddBundle(string(planJSON), string(markdown))
+		if err != nil {
+			return addBundleGeneratedMsg{err: fmt.Errorf("failed to generate feature bundle: %w", err)}
+		}
+
+		return addBundleGeneratedMsg{bundle: bundle}
+	}
+}
+
+func addCardsToTrelloCmd(stateManager *state.Manager, trelloClient *trello.Client, bundle *smith.BundleResponse) tea.Cmd {
+	return func() tea.Msg {
+		logging.Info("Adding cards to Trello board")
+		if trelloClient == nil {
+			return trelloMsg{err: fmt.Errorf("Trello client not initialized")}
+		}
+
+		state, err := stateManager.LoadState()
+		if err != nil {
+			return trelloMsg{err: fmt.Errorf("failed to load state: %w", err)}
+		}
+
+		trelloBundle := &trello.BundleResponse{
+			FeatureBundle: []trello.FeatureBundle{},
+		}
+
+		for _, fb := range bundle.FeatureBundle {
+			newFb := trello.FeatureBundle{
+				Title:    fb.Title,
+				Story:    fb.Story,
+				Priority: fb.Priority,
+				Tasks:    []trello.BundleTask{},
+			}
+			for _, t := range fb.Tasks {
+				newT := trello.BundleTask{
+					Title:        t.Title,
+					Description:  t.Description,
+					Dependencies: t.Dependencies,
+					Labels:       t.Labels,
+				}
+				newFb.Tasks = append(newFb.Tasks, newT)
+			}
+			trelloBundle.FeatureBundle = append(trelloBundle.FeatureBundle, newFb)
+		}
+
+		err = trelloClient.AddCardsToBoard(state.TrelloBoardID, trelloBundle)
+		if err != nil {
+			return trelloMsg{err: fmt.Errorf("failed to add cards to Trello board: %w", err)}
+		}
+
+		return trelloMsg{boardURL: state.TrelloBoardURL}
+	}
+}
 func (m Model) createTrelloBoard(boardName string) tea.Cmd {
 	return func() tea.Msg {
 		logging.Info("Creating Trello board for plan: %s", m.plan.ProjectName)
@@ -589,6 +826,36 @@ func (m Model) createTrelloBoard(boardName string) tea.Cmd {
 		}
 
 		return trelloMsg{boardURL: board.URL}
+	}
+}
+
+func (m *Model) getBoardsCmd() tea.Cmd {
+	return func() tea.Msg {
+		logging.Info("Fetching user's Trello boards")
+		if m.trelloClient == nil {
+			return boardsMsg{err: fmt.Errorf("Trello client not initialized")}
+		}
+
+		boards, err := m.trelloClient.GetUserBoards()
+		if err != nil {
+			return boardsMsg{err: fmt.Errorf("failed to get user boards: %w", err)}
+		}
+
+		return boardsMsg{boards: boards}
+	}
+}
+
+func (m Model) listModels() tea.Cmd {
+	return func() tea.Msg {
+		logging.Info("Fetching available models")
+		if m.agent == nil {
+			return listModelsMsg{err: fmt.Errorf("AI agent not initialized")}
+		}
+		models, err := m.agent.Executor().ListModels()
+		if err != nil {
+			return listModelsMsg{err: fmt.Errorf("failed to list models: %w", err)}
+		}
+		return listModelsMsg{models: models}
 	}
 }
 
